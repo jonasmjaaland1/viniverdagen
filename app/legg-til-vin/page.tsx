@@ -1,4 +1,3 @@
-cat > legg-til-vin/page.tsx << 'SLUTT'
 import LeggTilVin from '@/components/LeggTilVin';
 
 export default function LeggTilVinSide() {
@@ -15,4 +14,3 @@ export default function LeggTilVinSide() {
     </div>
   );
 }
-SLUTT
