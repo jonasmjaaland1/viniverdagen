@@ -9,10 +9,12 @@ export default function SmakingsKort({
   smaking,
   brukerId,
   visVin = true,
+  kanScoreOgKommentere = true,
 }: {
   smaking: any;
   brukerId: string;
   visVin?: boolean;
+  kanScoreOgKommentere?: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -64,11 +66,7 @@ export default function SmakingsKort({
       <div className="flex flex-col sm:flex-row gap-6">
         {visVin && v?.bilde_url && (
           <Link href={`/viner/${smaking.varenummer}`} className="flex-shrink-0 mx-auto sm:mx-0">
-            <img
-              src={v.bilde_url}
-              alt={v.navn}
-              className="w-24 h-36 object-contain"
-            />
+            <img src={v.bilde_url} alt={v.navn} className="w-24 h-36 object-contain" />
           </Link>
         )}
 
@@ -102,12 +100,13 @@ export default function SmakingsKort({
             )}
           </div>
 
-          <p className="text-sm font-sans text-ink-700/70 mt-3 italic">
-            {erFrittstaende ? 'Lagt til av' : 'Tatt med av'} {smaking.medlemmer?.navn}
-          </p>
+          {smaking.medlemmer?.navn && (
+            <p className="text-sm font-sans text-ink-700/70 mt-3 italic">
+              {erFrittstaende ? 'Lagt til av' : 'Tatt med av'} {smaking.medlemmer.navn}
+            </p>
+          )}
 
-          {/* Score-input */}
-          {!minScore && (
+          {kanScoreOgKommentere && !minScore && (
             <div className="mt-5 pt-5 border-t border-wine-900/10">
               <p className="text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
                 Din score
@@ -140,13 +139,12 @@ export default function SmakingsKort({
             </div>
           )}
 
-          {minScore && (
+          {kanScoreOgKommentere && minScore && (
             <p className="mt-4 text-sm font-sans text-ink-700/70">
               Du ga denne <span className="text-wine-700 font-medium">{minScore.score}</span>.
             </p>
           )}
 
-          {/* Alle scorer */}
           {scorer.length > 0 && (
             <div className="mt-4">
               <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-2">
@@ -154,10 +152,7 @@ export default function SmakingsKort({
               </p>
               <div className="flex flex-wrap gap-2">
                 {scorer.map((s: any) => (
-                  <span
-                    key={s.id}
-                    className="text-xs font-sans px-3 py-1 bg-cream-100 rounded-full"
-                  >
+                  <span key={s.id} className="text-xs font-sans px-3 py-1 bg-cream-100 rounded-full">
                     {s.medlemmer?.navn}: <span className="font-medium text-wine-700">{s.score}</span>
                   </span>
                 ))}
@@ -165,7 +160,6 @@ export default function SmakingsKort({
             </div>
           )}
 
-          {/* Kommentarer */}
           <div className="mt-6 pt-5 border-t border-wine-900/10">
             <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-3">
               Kommentarer ({kommentarer.length})
@@ -177,28 +171,31 @@ export default function SmakingsKort({
                   <li key={k.id} className="text-base">
                     <p className="text-ink-700/80 leading-relaxed">{k.tekst}</p>
                     <p className="text-xs font-sans text-ink-700/50 mt-1">
-                      — {k.medlemmer?.navn},{' '}
-                      {new Date(k.opprettet_at).toLocaleDateString('nb-NO')}
+                      — {k.medlemmer?.navn}, {new Date(k.opprettet_at).toLocaleDateString('nb-NO')}
                     </p>
                   </li>
                 ))}
               </ul>
             )}
 
-            <textarea
-              value={kommentar}
-              onChange={(e) => setKommentar(e.target.value)}
-              placeholder="Skriv en kommentar …"
-              rows={2}
-              className="input-field resize-none mb-2"
-            />
-            <button
-              onClick={lagreKommentar}
-              disabled={!kommentar.trim() || laster}
-              className="btn-secondary text-xs disabled:opacity-50"
-            >
-              Legg til kommentar
-            </button>
+            {kanScoreOgKommentere && (
+              <>
+                <textarea
+                  value={kommentar}
+                  onChange={(e) => setKommentar(e.target.value)}
+                  placeholder="Skriv en kommentar …"
+                  rows={2}
+                  className="input-field resize-none mb-2"
+                />
+                <button
+                  onClick={lagreKommentar}
+                  disabled={!kommentar.trim() || laster}
+                  className="btn-secondary text-xs disabled:opacity-50"
+                >
+                  Legg til kommentar
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
