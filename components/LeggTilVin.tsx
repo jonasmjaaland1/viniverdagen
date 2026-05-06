@@ -30,6 +30,7 @@ export default function LeggTilVin({
   const [sok, setSok] = useState('');
   const [resultater, setResultater] = useState<Produkt[]>([]);
   const [valgt, setValgt] = useState<Produkt | null>(null);
+  const [henterDetaljer, setHenterDetaljer] = useState(false);
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
   const [nyligLagtTil, setNyligLagtTil] = useState<Produkt | null>(null);
@@ -56,6 +57,31 @@ export default function LeggTilVin({
     }, 300);
     return () => clearTimeout(t);
   }, [sok, valgt]);
+
+  // Hent detaljer for valgt vin
+  async function velgVin(produkt: Produkt) {
+    // Hvis vi allerede har pris (fra cache), bruk dataene direkte
+    if (produkt.pris) {
+      setValgt(produkt);
+      return;
+    }
+
+    // Vis valgt vin med "henter detaljer..."-status
+    setValgt(produkt);
+    setHenterDetaljer(true);
+
+    try {
+      const res = await fetch(`/api/vinmonopolet/detaljer?varenummer=${encodeURIComponent(produkt.varenummer)}`);
+      const data = await res.json();
+      if (data.produkt) {
+        setValgt(data.produkt);
+      }
+    } catch {
+      // Behold den minimale visningen
+    } finally {
+      setHenterDetaljer(false);
+    }
+  }
 
   async function leggTil() {
     if (!valgt) return;
@@ -259,7 +285,7 @@ export default function LeggTilVin({
               {resultater.map((p) => (
                 <li key={p.varenummer}>
                   <button
-                    onClick={() => setValgt(p)}
+                    onClick={() => velgVin(p)}
                     className="w-full text-left p-3 hover:bg-cream-100 flex gap-3 items-center transition"
                   >
                     {p.bilde_url && (
@@ -296,13 +322,21 @@ export default function LeggTilVin({
             )}
             <div className="flex-1">
               <h4 className="font-display text-lg text-wine-900">{valgt.navn}</h4>
-              <p className="text-sm font-sans text-ink-700/60 mt-1">
-                {[valgt.hovedkategori, valgt.land, valgt.produsent].filter(Boolean).join(' · ')}
-              </p>
-              {valgt.pris && (
-                <p className="text-sm text-wine-700 font-display mt-1">
-                  {valgt.pris.toFixed(2)} kr
+              {henterDetaljer ? (
+                <p className="text-sm font-sans text-ink-700/60 italic mt-1">
+                  Henter detaljer …
                 </p>
+              ) : (
+                <>
+                  <p className="text-sm font-sans text-ink-700/60 mt-1">
+                    {[valgt.hovedkategori, valgt.land, valgt.produsent].filter(Boolean).join(' · ')}
+                  </p>
+                  {valgt.pris && (
+                    <p className="text-sm text-wine-700 font-display mt-1">
+                      {valgt.pris.toFixed(2)} kr
+                    </p>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -312,7 +346,7 @@ export default function LeggTilVin({
           )}
 
           <div className="flex gap-3">
-            <button onClick={leggTil} disabled={laster} className="btn-primary disabled:opacity-50">
+            <button onClick={leggTil} disabled={laster || henterDetaljer} className="btn-primary disabled:opacity-50">
               {laster ? 'Legger til …' : 'Legg til'}
             </button>
             <button onClick={() => setValgt(null)} className="btn-secondary">
