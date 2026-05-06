@@ -34,7 +34,6 @@ export default function Strekkodeskanner({
     let aktiv = true;
 
     async function lastBibliotek() {
-      // Last html5-qrcode dynamisk fra CDN hvis ikke allerede lastet
       if (typeof window === 'undefined') return;
 
       if (!window.Html5Qrcode) {
@@ -54,28 +53,55 @@ export default function Strekkodeskanner({
     async function startSkanner() {
       try {
         const Html5Qrcode = window.Html5Qrcode;
+
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const container = document.getElementById('strekkode-skanner-container');
+        if (!container) {
+          throw new Error('Kunne ikke finne skanner-container');
+        }
+
         const skanner = new Html5Qrcode('strekkode-skanner-container');
         skannerRef.current = skanner;
 
-        await skanner.start(
-          { facingMode: 'environment' }, // bakkamera
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 150 },
-            aspectRatio: 1.7777778,
-          },
-          handleSkanning,
-          () => {
-            // Stille feil under skanning - ignorer
+        const config = {
+          fps: 10,
+          qrbox: { width: 250, height: 150 },
+          aspectRatio: 1.7777778,
+        };
+
+        try {
+          await skanner.start(
+            { facingMode: 'environment' },
+            config,
+            handleSkanning,
+            () => {}
+          );
+        } catch (e1: any) {
+          console.log('Bakkamera ikke tilgjengelig, prøver standardkamera:', e1.message);
+
+          try {
+            const cameras = await Html5Qrcode.getCameras();
+            if (!cameras || cameras.length === 0) {
+              throw new Error('Fant ingen kamera på enheten.');
+            }
+            await skanner.start(
+              cameras[0].id,
+              config,
+              handleSkanning,
+              () => {}
+            );
+          } catch (e2: any) {
+            throw e2;
           }
-        );
+        }
+
         setStatus('skanner');
       } catch (e: any) {
         setStatus('feil');
         if (e.name === 'NotAllowedError' || e.message?.includes('Permission')) {
           setFeilmelding('Du må gi tilgang til kameraet for å skanne strekkode.');
-        } else if (e.name === 'NotFoundError') {
-          setFeilmelding('Fant ikke noe kamera på denne enheten.');
+        } else if (e.name === 'NotFoundError' || e.message?.includes('not found')) {
+          setFeilmelding('Fant ikke noe kamera på denne enheten. Skanning fungerer best på mobil.');
         } else {
           setFeilmelding(e.message || 'Kunne ikke starte kamera.');
         }
@@ -83,7 +109,6 @@ export default function Strekkodeskanner({
     }
 
     async function handleSkanning(decodedText: string) {
-      // Stopp skanning
       if (skannerRef.current) {
         try {
           await skannerRef.current.stop();
@@ -93,7 +118,6 @@ export default function Strekkodeskanner({
 
       setStatus('sokerOpp');
 
-      // Slå opp mot vårt API
       try {
         const res = await fetch(`/api/vinmonopolet/strekkode?ean=${encodeURIComponent(decodedText)}`);
         const data = await res.json();
@@ -147,7 +171,6 @@ export default function Strekkodeskanner({
 
   return (
     <div className="fixed inset-0 z-50 bg-ink-900/95 flex flex-col">
-      {/* Topp */}
       <div className="p-4 flex items-center justify-between border-b border-cream-50/10">
         <h2 className="font-display text-xl text-cream-50">Skann strekkode</h2>
         <button
@@ -158,26 +181,23 @@ export default function Strekkodeskanner({
         </button>
       </div>
 
-      {/* Skanner */}
       <div className="flex-1 flex items-center justify-center p-4 relative">
         {status === 'laster' && (
           <p className="text-cream-50/80 italic">Starter kamera …</p>
         )}
 
-        {(status === 'skanner' || status === 'sokerOpp') && (
-          <div className="w-full max-w-md">
-            <div
-              id="strekkode-skanner-container"
-              ref={containerRef}
-              className="w-full rounded overflow-hidden bg-black"
-            />
-            <p className="text-cream-50/80 text-center mt-4 italic text-sm">
-              {status === 'sokerOpp'
-                ? 'Søker opp vinen …'
-                : 'Hold strekkoden innenfor ruten'}
-            </p>
-          </div>
-        )}
+        <div className="w-full max-w-md" style={{ display: (status === 'skanner' || status === 'sokerOpp') ? 'block' : 'none' }}>
+          <div
+            id="strekkode-skanner-container"
+            ref={containerRef}
+            className="w-full rounded overflow-hidden bg-black"
+          />
+          <p className="text-cream-50/80 text-center mt-4 italic text-sm">
+            {status === 'sokerOpp'
+              ? 'Søker opp vinen …'
+              : 'Hold strekkoden innenfor ruten'}
+          </p>
+        </div>
 
         {status === 'ingenTreff' && (
           <div className="text-center max-w-md">
