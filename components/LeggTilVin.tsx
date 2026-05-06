@@ -12,9 +12,11 @@ interface Produkt {
   produkttype?: string;
   hovedkategori?: string;
   land?: string;
+  distrikt?: string;
   pris?: number;
   bilde_url?: string;
   produsent?: string;
+  smak?: string;
 }
 
 export default function LeggTilVin({
@@ -67,6 +69,46 @@ export default function LeggTilVin({
       return;
     }
 
+    // Steg 1: Sørg for at vinen er lagret i vinmonopol_produkter
+    try {
+      const lagreRes = await fetch('/api/vinmonopolet/lagre', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(valgt),
+      });
+      const lagreData = await lagreRes.json();
+      if (!lagreRes.ok) {
+        setFeil(lagreData.feil || 'Kunne ikke lagre vin-data');
+        setLaster(false);
+        return;
+      }
+    } catch (e: any) {
+      setFeil('Kunne ikke lagre vin-data: ' + e.message);
+      setLaster(false);
+      return;
+    }
+
+    // Steg 2: For frittstående viner - sjekk om det allerede finnes en
+    if (!klubbkveldId) {
+      const { data: eksisterende } = await supabase
+        .from('smakinger')
+        .select('id, varenummer')
+        .is('klubbkveld_id', null)
+        .eq('varenummer', valgt.varenummer)
+        .maybeSingle();
+
+      if (eksisterende) {
+        if (redirectEtterLagring) {
+          router.push(redirectEtterLagring.replace(':id', valgt.varenummer));
+          return;
+        }
+        setFeil('Denne vinen er allerede lagt til.');
+        setLaster(false);
+        return;
+      }
+    }
+
+    // Steg 3: Opprett smakingen
     const { data, error } = await supabase
       .from('smakinger')
       .insert({
