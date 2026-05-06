@@ -1,8 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/sync-vinmonopolet",
-      "schedule": "0 6 * * *"
-    }
-  ]
-}
+{}
