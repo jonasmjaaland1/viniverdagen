@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-browser';
+import DelPaWhatsApp from './DelPaWhatsApp';
+import Strekkodeskanner from './Strekkodeskanner';
 
 interface Produkt {
   varenummer: string;
@@ -22,16 +24,17 @@ export default function LeggTilVin({
   klubbkveldId?: string;
   redirectEtterLagring?: string;
 }) {
-  const [apen, setApen] = useState(!klubbkveldId); // åpen som default når frittstående
+  const [apen, setApen] = useState(!klubbkveldId);
   const [sok, setSok] = useState('');
   const [resultater, setResultater] = useState<Produkt[]>([]);
   const [valgt, setValgt] = useState<Produkt | null>(null);
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
+  const [nyligLagtTil, setNyligLagtTil] = useState<Produkt | null>(null);
+  const [skannerApen, setSkannerApen] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
-  // Debounced søk
   useEffect(() => {
     if (sok.length < 2 || valgt) {
       setResultater([]);
@@ -84,23 +87,85 @@ export default function LeggTilVin({
       return;
     }
 
-    setValgt(null);
-    setSok('');
-
     if (redirectEtterLagring && data) {
       router.push(redirectEtterLagring.replace(':id', data.varenummer));
-    } else {
-      if (klubbkveldId) setApen(false);
+      setLaster(false);
+      return;
+    }
+
+    if (klubbkveldId) {
+      setNyligLagtTil(valgt);
+      setValgt(null);
+      setSok('');
       router.refresh();
     }
     setLaster(false);
   }
 
+  function handleSkannet(produkt: Produkt) {
+    setValgt(produkt);
+    setSkannerApen(false);
+    setSok('');
+    setResultater([]);
+  }
+
+  if (skannerApen) {
+    return (
+      <Strekkodeskanner
+        onTreff={handleSkannet}
+        onLukk={() => setSkannerApen(false)}
+      />
+    );
+  }
+
+  if (nyligLagtTil) {
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const kveldUrl = `${baseUrl}/klubbkvelder/${klubbkveldId}`;
+    let tekst = `🍷 Jeg tar med *${nyligLagtTil.navn}* på neste klubbkveld!`;
+    const detaljer = [nyligLagtTil.hovedkategori, nyligLagtTil.land].filter(Boolean).join(' · ');
+    if (detaljer) tekst += `\n${detaljer}`;
+    if (nyligLagtTil.pris) tekst += `\n💰 ${Number(nyligLagtTil.pris).toFixed(0)} kr`;
+    tekst += `\n\n${kveldUrl}`;
+
+    return (
+      <div className="kort p-6 space-y-4">
+        <div className="flex items-start gap-4">
+          {nyligLagtTil.bilde_url && (
+            <img src={nyligLagtTil.bilde_url} alt="" className="w-16 h-24 object-contain" />
+          )}
+          <div className="flex-1">
+            <p className="text-xs uppercase tracking-wider font-sans text-wine-700 mb-1">
+              Lagt til
+            </p>
+            <h4 className="font-display text-lg text-wine-900">{nyligLagtTil.navn}</h4>
+            <p className="text-sm font-sans text-ink-700/60 mt-1">
+              Vil du fortelle gruppa hvilken vin du tar med?
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <DelPaWhatsApp tekst={tekst} />
+          <button
+            onClick={() => setNyligLagtTil(null)}
+            className="btn-secondary text-xs"
+          >
+            Lukk
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!apen && klubbkveldId) {
     return (
-      <button onClick={() => setApen(true)} className="btn-primary">
-        + Legg til vin
-      </button>
+      <div className="flex flex-wrap gap-3">
+        <button onClick={() => setApen(true)} className="btn-primary">
+          + Legg til vin
+        </button>
+        <button onClick={() => setSkannerApen(true)} className="btn-secondary">
+          📷 Skann strekkode
+        </button>
+      </div>
     );
   }
 
@@ -136,6 +201,15 @@ export default function LeggTilVin({
             />
           </div>
 
+          <div className="flex justify-center">
+            <button
+              onClick={() => setSkannerApen(true)}
+              className="btn-secondary text-xs flex items-center gap-2"
+            >
+              📷 Eller skann strekkode
+            </button>
+          </div>
+
           {laster && <p className="text-sm text-ink-700/60 italic">Søker …</p>}
 
           {resultater.length > 0 && (
@@ -168,7 +242,7 @@ export default function LeggTilVin({
 
           {sok.length >= 2 && !laster && resultater.length === 0 && (
             <p className="text-sm text-ink-700/60 italic">
-              Ingen treff. Prøv et annet søk eller varenummer.
+              Ingen treff. Prøv et annet søk eller skann strekkoden.
             </p>
           )}
         </>

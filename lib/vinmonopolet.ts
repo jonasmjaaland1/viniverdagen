@@ -1,7 +1,7 @@
 // Vinmonopolet-integrasjon
 // - Søk: bruker Open API (krever API-nøkkel, gir kun navn + varenummer)
 // - Detaljer: scraper offentlige produktsider på vinmonopolet.no
-//   (siden Open API ikke gir pris/land/druer)
+// - Strekkode: bruker Open API gtin-parameter
  
 const OPEN_API = 'https://apis.vinmonopolet.no/products/v0';
 const PUBLIC_BASE = 'https://www.vinmonopolet.no';
@@ -86,9 +86,44 @@ export async function sokOpenApi(spørring: string, limit: number = 10): Promise
   }
 }
  
+// ============= STREKKODE-OPPSLAG =============
+ 
+export async function sokPaStrekkode(ean: string): Promise<{ varenummer: string; navn: string } | null> {
+  const apiKey = process.env.VINMONOPOLET_API_KEY;
+  if (!apiKey) {
+    console.error('VINMONOPOLET_API_KEY mangler');
+    return null;
+  }
+ 
+  // Vinmonopolets Open API støtter gtin-parameter
+  const url = `${OPEN_API}/details-normal?gtin=${encodeURIComponent(ean.trim())}&maxResults=1`;
+ 
+  try {
+    const res = await fetch(url, {
+      headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+    });
+    if (!res.ok) {
+      console.error('Strekkode-oppslag feilet:', res.status);
+      return null;
+    }
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+ 
+    const p = data[0];
+    if (!p.basic?.productId) return null;
+ 
+    return {
+      varenummer: String(p.basic.productId),
+      navn: p.basic.productShortName || '',
+    };
+  } catch (e) {
+    console.error('Feil ved strekkode-oppslag:', e);
+    return null;
+  }
+}
+ 
 // ============= SCRAPE PRODUKTSIDE =============
  
-// Parser pris fra "Kr 229,90, 75 cl" eller "Kr 1 234,50, 75 cl"
 function parsePris(text: string): number | undefined {
   const match = text.match(/Kr\s+([\d\s]+[,.]?\d*)/i);
   if (!match) return undefined;
@@ -97,12 +132,11 @@ function parsePris(text: string): number | undefined {
   return isNaN(pris) ? undefined : pris;
 }
  
-// Parser volum fra "75 cl" eller "0,75 L"
 function parseVolum(text: string): number | undefined {
   const clMatch = text.match(/(\d+(?:[,.]\d+)?)\s*cl/i);
   if (clMatch) {
     const cl = parseFloat(clMatch[1].replace(',', '.'));
-    return cl / 100; // til liter
+    return cl / 100;
   }
   const lMatch = text.match(/(\d+(?:[,.]\d+)?)\s*l(?:iter)?/i);
   if (lMatch) {
@@ -111,9 +145,7 @@ function parseVolum(text: string): number | undefined {
   return undefined;
 }
  
-// Hent meta-tag fra HTML
 function metaTag(html: string, property: string): string | undefined {
-  // Match både property="..." og name="..." varianter
   const patterns = [
     new RegExp(`<meta[^>]*property=["']${property}["'][^>]*content=["']([^"']+)["']`, 'i'),
     new RegExp(`<meta[^>]*content=["']([^"']+)["'][^>]*property=["']${property}["']`, 'i'),
@@ -138,38 +170,29 @@ function decodeHtml(s: string): string {
     .replace(/&oslash;/g, 'ø');
 }
  
-// Parse land og distrikt fra Vinmonopolet-URL
-// Eksempel: /Land/Italia/Veneto/Valpolicella-Ripasso/Sartori-...-/p/1174701
 function parseGeografiFraUrl(url: string): { land?: string; distrikt?: string; underdistrikt?: string } {
   const m = url.match(/\/Land\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/);
   if (!m) return {};
   return {
-    land: m[1] ? m[1].replace(/-/g, ' ') : undefined,
-    distrikt: m[2] ? m[2].replace(/-/g, ' ') : undefined,
-    underdistrikt: m[3] ? m[3].replace(/-/g, ' ') : undefined,
+    land: m[1] ? decodeURIComponent(m[1].replace(/-/g, ' ')) : undefined,
+    distrikt: m[2] ? decodeURIComponent(m[2].replace(/-/g, ' ')) : undefined,
+    underdistrikt: m[3] ? decodeURIComponent(m[3].replace(/-/g, ' ')) : undefined,
   };
 }
  
-// Parse type og smaksbeskrivelse fra meta-description
-// Format: "Rødvin. Tørr og fyldig. Rund og bløt frukt. Lang ettersmak. ... . Kr 229,90, 75 cl"
 function parseBeskrivelse(beskrivelse: string): { produkttype?: string; smak?: string } {
   if (!beskrivelse) return {};
-  // Første ord før første punktum er typisk produkttype
   const deler = beskrivelse.split('.').map(d => d.trim()).filter(Boolean);
   if (deler.length === 0) return {};
  
   const produkttype = deler[0];
- 
-  // Smak er resten av setningene, men uten den siste som inneholder pris
   const smaksDeler = deler.slice(1).filter(d => !d.match(/Kr\s+[\d\s,]/i) && !d.match(/cl$|liter$|l$/i));
   const smak = smaksDeler.length > 0 ? smaksDeler.join('. ') + '.' : undefined;
  
   return { produkttype, smak };
 }
  
-// Hent produktdetaljer ved å scrape produktsiden
 export async function hentProduktDetaljer(varenummer: string, navn?: string): Promise<VinmonopolProdukt | null> {
-  // Vinmonopolet redirecter /p/{varenummer} til riktig URL
   const url = `${PUBLIC_BASE}/p/${encodeURIComponent(varenummer)}`;
  
   try {
@@ -190,7 +213,6 @@ export async function hentProduktDetaljer(varenummer: string, navn?: string): Pr
     const html = await res.text();
     const finalUrl = res.url;
  
-    // Hent meta-tagger
     const tittel = metaTag(html, 'og:title') || navn || '';
     const beskrivelse = metaTag(html, 'og:description') || metaTag(html, 'description') || '';
     const bilde = metaTag(html, 'og:image') || `https://bilder.vinmonopolet.no/cache/515x515-0/${varenummer}-1.jpg`;
@@ -221,20 +243,11 @@ export async function hentProduktDetaljer(varenummer: string, navn?: string): Pr
 }
  
 // ============= SAMLET SØK =============
-// Brukes av /api/vinmonopolet/sok
-// Steg 1: Open API gir navn + varenummer
-// Steg 2: For hvert resultat, hent detaljer fra produktsiden (parallellt)
-// Steg 3: Lagre alt i Supabase-cachen
  
-export async function sokVinmonopolet(
-  supabase: any,
-  spørring: string,
-  limit: number = 10
-) {
+export async function sokVinmonopolet(supabase: any, spørring: string, limit: number = 10) {
   const grunnTreff = await sokOpenApi(spørring, limit);
   if (grunnTreff.length === 0) return [];
  
-  // Sjekk hva vi allerede har i cache
   const varenumre = grunnTreff.map(t => t.varenummer);
   const { data: cachet } = await supabase
     .from('vinmonopol_produkter')
@@ -244,7 +257,6 @@ export async function sokVinmonopolet(
   const cacheMap = new Map<string, any>();
   (cachet || []).forEach((c: any) => cacheMap.set(c.varenummer, c));
  
-  // For viner som ikke er cachet (eller cache er > 7 dager gammel), scrape detaljer
   const enUkeSiden = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const trengerOppdatering: { varenummer: string; navn: string }[] = [];
   const ferdige: VinmonopolProdukt[] = [];
@@ -258,7 +270,6 @@ export async function sokVinmonopolet(
     }
   }
  
-  // Scrape parallellt med rate-limit (maks 3 samtidig for å være snill)
   const detaljerteResultater: VinmonopolProdukt[] = [];
   for (let i = 0; i < trengerOppdatering.length; i += 3) {
     const batch = trengerOppdatering.slice(i, i + 3);
@@ -270,7 +281,6 @@ export async function sokVinmonopolet(
     });
   }
  
-  // Lagre nye/oppdaterte i cache (fire and forget)
   if (detaljerteResultater.length > 0) {
     const rader = detaljerteResultater.map(p => ({
       varenummer: p.varenummer,
@@ -301,7 +311,6 @@ export async function sokVinmonopolet(
       .catch((e: any) => console.error('Cache-skriving feilet:', e));
   }
  
-  // Returner ferdige (fra cache) + nye (fra scraping), i samme rekkefølge som søk
   const allByVarenr = new Map<string, VinmonopolProdukt>();
   ferdige.forEach(p => allByVarenr.set(p.varenummer, p));
   detaljerteResultater.forEach(p => allByVarenr.set(p.varenummer, p));
@@ -309,6 +318,52 @@ export async function sokVinmonopolet(
   return grunnTreff
     .map(t => allByVarenr.get(t.varenummer))
     .filter((p): p is VinmonopolProdukt => !!p);
+}
+ 
+// ============= STREKKODE: SAMLET FLYTING =============
+// Steg 1: Slå opp varenummer fra strekkode via Open API
+// Steg 2: Hent detaljer (eller bruk cache)
+ 
+export async function sokFraStrekkode(supabase: any, ean: string): Promise<VinmonopolProdukt | null> {
+  // Steg 1: gtin → varenummer
+  const treff = await sokPaStrekkode(ean);
+  if (!treff) return null;
+ 
+  // Steg 2: sjekk cache først
+  const enUkeSiden = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const { data: cache } = await supabase
+    .from('vinmonopol_produkter')
+    .select('*')
+    .eq('varenummer', treff.varenummer)
+    .single();
+ 
+  if (cache && cache.sist_oppdatert && new Date(cache.sist_oppdatert) > enUkeSiden) {
+    return cache;
+  }
+ 
+  // Steg 3: scrape detaljer
+  const detaljer = await hentProduktDetaljer(treff.varenummer, treff.navn);
+  if (!detaljer) return null;
+ 
+  // Lagre i cache
+  await supabase.from('vinmonopol_produkter').upsert({
+    varenummer: detaljer.varenummer,
+    navn: detaljer.navn,
+    produkttype: detaljer.produkttype,
+    hovedkategori: detaljer.hovedkategori,
+    land: detaljer.land,
+    distrikt: detaljer.distrikt,
+    underdistrikt: detaljer.underdistrikt,
+    pris: detaljer.pris,
+    volum: detaljer.volum,
+    bilde_url: detaljer.bilde_url,
+    produkt_url: detaljer.produkt_url,
+    smak: detaljer.smak,
+    ean: ean,
+    sist_oppdatert: new Date().toISOString(),
+  }, { onConflict: 'varenummer' });
+ 
+  return detaljer;
 }
  
 // Eksport for kompatibilitet
