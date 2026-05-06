@@ -3,6 +3,7 @@ import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import SmakingsKort from '@/components/SmakingsKort';
 import DelPaWhatsApp from '@/components/DelPaWhatsApp';
+import SlettVinKnapp from '@/components/SlettVinKnapp';
 
 export default async function VinDetaljSide({
   params,
@@ -17,7 +18,7 @@ export default async function VinDetaljSide({
 
   const { data: medlem } = await supabase
     .from('medlemmer')
-    .select('godkjent, er_klubbmedlem')
+    .select('godkjent, er_klubbmedlem, er_admin')
     .eq('id', user.id)
     .single();
 
@@ -132,6 +133,16 @@ export default async function VinDetaljSide({
           <p className="text-ink-700/60 italic">Ingen smakinger ennå.</p>
         )}
       </section>
+
+      {/* Admin-handlinger */}
+      {medlem.er_admin && (
+        <section className="pt-8 border-t border-wine-900/10">
+          <h2 className="font-display text-lg text-ink-700/60 mb-3">
+            Administrator
+          </h2>
+          <SlettVinKnapp varenummer={id} vinNavn={vin.navn} />
+        </section>
+      )}
     </div>
   );
 }
