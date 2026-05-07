@@ -1,8 +1,7 @@
 // Service Worker for VinIverdagen
-// Fase 1: Bare grunnleggende - cache for offline-tilgang
-// Senere fase: vil håndtere push-varsler
+// Håndterer både caching og push-varsler
 
-const CACHE_NAVN = 'viniverdagen-v1';
+const CACHE_NAVN = 'viniverdagen-v2';
 
 // Når service workeren installeres
 self.addEventListener('install', (event) => {
@@ -25,12 +24,9 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Network-first strategy (alltid prøv nett først, fall til cache)
+// Network-first strategy
 self.addEventListener('fetch', (event) => {
-  // Bare cache GET-forespørsler
   if (event.request.method !== 'GET') return;
-
-  // Hopp over API-kall og auth
   if (event.request.url.includes('/api/') || event.request.url.includes('/auth/')) {
     return;
   }
@@ -38,7 +34,6 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((respons) => {
-        // Cache vellykkede svar
         if (respons.ok) {
           const klone = respons.clone();
           caches.open(CACHE_NAVN).then((cache) => cache.put(event.request, klone));
@@ -46,5 +41,53 @@ self.addEventListener('fetch', (event) => {
         return respons;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+// PUSH-VARSLER
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    data = { tittel: 'VinIverdagen', tekst: event.data.text() };
+  }
+
+  const tittel = data.tittel || 'VinIverdagen';
+  const opsjoner = {
+    body: data.tekst || '',
+    icon: data.ikon || '/icon-192.png',
+    badge: '/icon-192.png',
+    data: { url: data.url || '/' },
+    vibrate: [100, 50, 100],
+    tag: 'viniverdagen',
+    renotify: true,
+  };
+
+  event.waitUntil(self.registration.showNotification(tittel, opsjoner));
+});
+
+// Klikk på varsel
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const url = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // Hvis appen allerede er åpen, naviger til URL-en
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      // Ellers åpne ny fane
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(url);
+      }
+    })
   );
 });
