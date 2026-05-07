@@ -26,16 +26,20 @@ export default function Melding({
   erMin,
   visAvsender,
   paSvar,
+  erAdmin = false,
 }: {
   melding: MeldingType;
   erMin: boolean;
   visAvsender: boolean;
   paSvar: () => void;
+  erAdmin?: boolean;
 }) {
   const supabase = createClient();
   const [redigerer, setRedigerer] = useState(false);
   const [redigertTekst, setRedigertTekst] = useState(melding.tekst || '');
   const [meny, setMeny] = useState(false);
+
+  const kanSlette = erMin || erAdmin;
 
   async function lagreRedigering() {
     const ny = redigertTekst.trim();
@@ -165,7 +169,7 @@ export default function Melding({
             </div>
           </div>
 
-          {/* Handlingsmeny (knapp som vises ved hover/klikk) */}
+          {/* Handlingsmeny */}
           {!redigerer && (
             <div
               className={`absolute top-1 ${erMin ? 'left-0 -translate-x-full' : 'right-0 translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}
@@ -194,12 +198,12 @@ export default function Melding({
                       ✏ Rediger
                     </button>
                   )}
-                  {erMin && (
+                  {kanSlette && (
                     <button
                       onClick={slett}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-cream-100 text-wine-700"
                     >
-                      🗑 Slett
+                      🗑 Slett{!erMin && erAdmin ? ' (admin)' : ''}
                     </button>
                   )}
                 </div>

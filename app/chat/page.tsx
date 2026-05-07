@@ -9,7 +9,7 @@ export default async function ChatSide() {
 
   const { data: medlem } = await supabase
     .from('medlemmer')
-    .select('id, navn, godkjent')
+    .select('id, navn, godkjent, er_admin')
     .eq('id', user.id)
     .single();
 
@@ -17,7 +17,6 @@ export default async function ChatSide() {
     redirect('/login');
   }
 
-  // Hent siste 50 meldinger
   const { data: meldinger } = await supabase
     .from('meldinger')
     .select(`
@@ -43,6 +42,7 @@ export default async function ChatSide() {
         brukerId={medlem.id}
         brukernavn={medlem.navn}
         startMeldinger={(meldinger || []).reverse()}
+        erAdmin={medlem.er_admin || false}
       />
     </div>
   );

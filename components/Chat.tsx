@@ -26,10 +26,12 @@ export default function Chat({
   brukerId,
   brukernavn,
   startMeldinger,
+  erAdmin = false,
 }: {
   brukerId: string;
   brukernavn: string;
   startMeldinger: MeldingType[];
+  erAdmin?: boolean;
 }) {
   const supabase = createClient();
   const [meldinger, setMeldinger] = useState<MeldingType[]>(startMeldinger);
@@ -42,7 +44,6 @@ export default function Chat({
   const meldingsListeRef = useRef<HTMLDivElement>(null);
   const filInputRef = useRef<HTMLInputElement>(null);
 
-  // Scroll til bunnen når nye meldinger kommer
   const scrollTilBunnen = useCallback(() => {
     if (meldingsListeRef.current) {
       meldingsListeRef.current.scrollTop = meldingsListeRef.current.scrollHeight;
@@ -53,7 +54,6 @@ export default function Chat({
     scrollTilBunnen();
   }, [meldinger.length, scrollTilBunnen]);
 
-  // Realtime: lytt på nye/endrede/slettede meldinger
   useEffect(() => {
     const channel = supabase
       .channel('meldinger-channel')
@@ -61,7 +61,6 @@ export default function Chat({
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'meldinger' },
         async (payload) => {
-          // Hent full melding med relasjoner
           const { data } = await supabase
             .from('meldinger')
             .select(`
@@ -154,7 +153,6 @@ export default function Chat({
 
     let bilde_url: string | null = null;
 
-    // Last opp bilde først hvis det finnes
     if (valgtBilde) {
       const filendelse = valgtBilde.name.split('.').pop();
       const filnavn = `${brukerId}/${Date.now()}.${filendelse}`;
@@ -203,7 +201,6 @@ export default function Chat({
 
   return (
     <div className="kort flex flex-col h-[calc(100vh-220px)] min-h-[500px] max-h-[800px] overflow-hidden">
-      {/* Meldingsliste */}
       <div
         ref={meldingsListeRef}
         className="flex-1 overflow-y-auto p-4 space-y-1"
@@ -229,13 +226,13 @@ export default function Chat({
                 erMin={m.medlem_id === brukerId}
                 visAvsender={visAvsender}
                 paSvar={() => setSvarerTil(m)}
+                erAdmin={erAdmin}
               />
             );
           })
         )}
       </div>
 
-      {/* Input-område */}
       <div className="border-t border-wine-900/10 p-3 bg-cream-50/50">
         {svarerTil && (
           <div className="bg-cream-100 border-l-4 border-wine-700 px-3 py-2 mb-2 rounded text-sm flex items-start justify-between gap-2">
