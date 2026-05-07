@@ -50,6 +50,7 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
     { href: "/legg-til-vin", label: "Legg til vin", ikon: "➕" },
     { href: "/chat", label: "Chat", ikon: "💬" },
     { href: "/statistikk", label: "Statistikk", ikon: "📊" },
+    { href: "/innstillinger", label: "Innstillinger", ikon: "🔔" },
   ];
 
   if (medlem.er_admin) {
