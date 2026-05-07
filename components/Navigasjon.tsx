@@ -38,6 +38,7 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
   const hovedLenker = [
     { href: "/", label: "Forside" },
     { href: "/legg-til-vin", label: "Legg til vin" },
+    { href: "/viner", label: "Viner" },
     { href: "/chat", label: "Chat" },
   ];
 
