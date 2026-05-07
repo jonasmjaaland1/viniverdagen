@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || '';
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "";
 
 // Konverter base64-streng til Uint8Array (kreves av PushManager)
 function base64TilUint8Array(base64: string): Uint8Array {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const base64Riktig = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64Riktig = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(base64Riktig);
   const buffer = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) buffer[i] = raw.charCodeAt(i);
@@ -15,14 +15,14 @@ function base64TilUint8Array(base64: string): Uint8Array {
 }
 
 function gjettEnhetsnavn(): string {
-  if (typeof navigator === 'undefined') return 'Ukjent enhet';
+  if (typeof navigator === "undefined") return "Ukjent enhet";
   const ua = navigator.userAgent;
-  if (/iPhone/i.test(ua)) return 'iPhone';
-  if (/iPad/i.test(ua)) return 'iPad';
-  if (/Android/i.test(ua)) return 'Android';
-  if (/Mac/i.test(ua)) return 'Mac';
-  if (/Windows/i.test(ua)) return 'Windows';
-  return 'Ukjent enhet';
+  if (/iPhone/i.test(ua)) return "iPhone";
+  if (/iPad/i.test(ua)) return "iPad";
+  if (/Android/i.test(ua)) return "Android";
+  if (/Mac/i.test(ua)) return "Mac";
+  if (/Windows/i.test(ua)) return "Windows";
+  return "Ukjent enhet";
 }
 
 export default function VarslerKnapp() {
@@ -30,20 +30,21 @@ export default function VarslerKnapp() {
   const [aktivert, setAktivert] = useState(false);
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
-  const [iosInstallasjonNodvendig, setIosInstallasjonNodvendig] = useState(false);
+  const [iosInstallasjonNodvendig, setIosInstallasjonNodvendig] =
+    useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
 
     // Sjekk om push-varsler støttes
-    const harService = 'serviceWorker' in navigator;
-    const harPush = 'PushManager' in window;
-    const harNotification = 'Notification' in window;
+    const harService = "serviceWorker" in navigator;
+    const harPush = "PushManager" in window;
+    const harNotification = "Notification" in window;
 
     // På iOS funker push kun hvis appen er lagt til på hjem-skjermen (PWA)
     const erIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const erStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as any).standalone === true;
 
     if (erIos && !erStandalone) {
@@ -71,8 +72,8 @@ export default function VarslerKnapp() {
     try {
       // Be om tillatelse
       const tillatelse = await Notification.requestPermission();
-      if (tillatelse !== 'granted') {
-        setFeil('Du må gi tilgang til varsler.');
+      if (tillatelse !== "granted") {
+        setFeil("Du må gi tilgang til varsler.");
         setLaster(false);
         return;
       }
@@ -83,13 +84,15 @@ export default function VarslerKnapp() {
       // Opprett abonnement
       const abonnement = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: base64TilUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: base64TilUint8Array(
+          VAPID_PUBLIC_KEY,
+        ) as BufferSource,
       });
 
       // Send til server
-      const res = await fetch('/api/push/abonner', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/push/abonner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           abonnement: abonnement.toJSON(),
           enhetsnavn: gjettEnhetsnavn(),
@@ -98,7 +101,7 @@ export default function VarslerKnapp() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.feil || 'Kunne ikke lagre abonnement');
+        throw new Error(data.feil || "Kunne ikke lagre abonnement");
       }
 
       setAktivert(true);
@@ -121,9 +124,9 @@ export default function VarslerKnapp() {
         const endpoint = sub.endpoint;
         await sub.unsubscribe();
 
-        await fetch('/api/push/abonner', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
+        await fetch("/api/push/abonner", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint }),
         });
       }
@@ -140,13 +143,21 @@ export default function VarslerKnapp() {
   if (iosInstallasjonNodvendig) {
     return (
       <div className="kort p-5 bg-cream-100/50">
-        <h3 className="font-display text-lg text-wine-900 mb-2">📱 Push-varsler</h3>
+        <h3 className="font-display text-lg text-wine-900 mb-2">
+          📱 Push-varsler
+        </h3>
         <p className="text-sm font-sans text-ink-700/80 mb-3">
-          For å få push-varsler på iPhone må du legge appen til på hjem-skjermen først:
+          For å få push-varsler på iPhone må du legge appen til på hjem-skjermen
+          først:
         </p>
         <ol className="text-sm font-sans text-ink-700/80 space-y-1.5 list-decimal list-inside">
-          <li>Trykk på del-knappen <span className="text-wine-700">⎋</span> nederst i Safari</li>
-          <li>Scroll ned og velg <strong>"Legg til på Hjem-skjerm"</strong></li>
+          <li>
+            Trykk på del-knappen <span className="text-wine-700">⎋</span>{" "}
+            nederst i Safari
+          </li>
+          <li>
+            Scroll ned og velg <strong>"Legg til på Hjem-skjerm"</strong>
+          </li>
           <li>Åpne appen fra hjem-skjermen</li>
           <li>Aktiver varsler herfra</li>
         </ol>
@@ -178,13 +189,11 @@ export default function VarslerKnapp() {
           <h3 className="font-display text-lg text-wine-900">Push-varsler</h3>
           <p className="text-sm font-sans text-ink-700/70 mt-1">
             {aktivert
-              ? 'Du får varsler når noen sender melding eller andre ting skjer i appen.'
-              : 'Få varsler om nye meldinger og hendelser i klubben, selv når appen er lukket.'}
+              ? "Du får varsler når noen sender melding eller andre ting skjer i appen."
+              : "Få varsler om nye meldinger og hendelser i klubben, selv når appen er lukket."}
           </p>
 
-          {feil && (
-            <p className="text-sm text-wine-700 mt-2">{feil}</p>
-          )}
+          {feil && <p className="text-sm text-wine-700 mt-2">{feil}</p>}
 
           <div className="mt-4">
             {aktivert ? (
@@ -193,7 +202,7 @@ export default function VarslerKnapp() {
                 disabled={laster}
                 className="btn-secondary text-xs disabled:opacity-50"
               >
-                {laster ? 'Deaktiverer …' : 'Slå av varsler'}
+                {laster ? "Deaktiverer …" : "Slå av varsler"}
               </button>
             ) : (
               <button
@@ -201,7 +210,7 @@ export default function VarslerKnapp() {
                 disabled={laster}
                 className="btn-primary disabled:opacity-50"
               >
-                {laster ? 'Aktiverer …' : 'Aktiver varsler'}
+                {laster ? "Aktiverer …" : "Aktiver varsler"}
               </button>
             )}
           </div>
