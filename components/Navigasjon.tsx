@@ -37,8 +37,8 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
   // Synlige hovedvalg (alltid synlig)
   const hovedLenker = [
     { href: "/", label: "Forside" },
-    { href: "/legg-til-vin", label: "Legg til vin" },
     { href: "/viner", label: "Viner" },
+    { href: "/legg-til-vin", label: "Legg til vin" },
     { href: "/chat", label: "Chat" },
   ];
 
