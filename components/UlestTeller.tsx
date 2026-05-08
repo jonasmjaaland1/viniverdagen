@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { createClient } from "@/lib/supabase-browser";
 
 export default function UlestTeller({ brukerId }: { brukerId: string }) {
   const supabase = createClient();
   const [ulest, setUlest] = useState(0);
+  const kanalIdRef = useRef<string>(
+    `ulest-teller-${Math.random().toString(36).substring(2, 11)}`,
+  );
 
   useEffect(() => {
     let aktiv = true;
+    const kanalId = kanalIdRef.current;
 
     async function hentUlest() {
       const { data: aktivitet } = await supabase
@@ -30,9 +34,8 @@ export default function UlestTeller({ brukerId }: { brukerId: string }) {
 
     hentUlest();
 
-    // Kombinert kanal med begge events FØR subscribe
     const channel = supabase
-      .channel("ulest-teller")
+      .channel(kanalId)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "meldinger" },
