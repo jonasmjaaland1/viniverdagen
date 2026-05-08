@@ -35,6 +35,8 @@ export default function LeggTilVin({
   const [feil, setFeil] = useState<string | null>(null);
   const [nyligLagtTil, setNyligLagtTil] = useState<Produkt | null>(null);
   const [skannerApen, setSkannerApen] = useState(false);
+  const [score, setScore] = useState<number | null>(null);
+  const [kommentar, setKommentar] = useState('');
   const router = useRouter();
   const supabase = createClient();
 
@@ -58,18 +60,13 @@ export default function LeggTilVin({
     return () => clearTimeout(t);
   }, [sok, valgt]);
 
-  // Hent detaljer for valgt vin
   async function velgVin(produkt: Produkt) {
-    // Hvis vi allerede har pris (fra cache), bruk dataene direkte
     if (produkt.pris) {
       setValgt(produkt);
       return;
     }
-
-    // Vis valgt vin med "henter detaljer..."-status
     setValgt(produkt);
     setHenterDetaljer(true);
-
     try {
       const res = await fetch(`/api/vinmonopolet/detaljer?varenummer=${encodeURIComponent(produkt.varenummer)}`);
       const data = await res.json();
@@ -85,6 +82,17 @@ export default function LeggTilVin({
 
   async function leggTil() {
     if (!valgt) return;
+
+    // Obligatorisk validering
+    if (!score) {
+      setFeil('Du må gi en karakter (1-10).');
+      return;
+    }
+    if (!kommentar.trim()) {
+      setFeil('Du må skrive en kommentar om vinen.');
+      return;
+    }
+
     setFeil(null);
     setLaster(true);
 
@@ -135,7 +143,7 @@ export default function LeggTilVin({
     }
 
     // Steg 3: Opprett smakingen
-    const { data, error } = await supabase
+    const { data: smaking, error } = await supabase
       .from('smakinger')
       .insert({
         klubbkveld_id: klubbkveldId || null,
@@ -155,8 +163,23 @@ export default function LeggTilVin({
       return;
     }
 
-    if (redirectEtterLagring && data) {
-      router.push(redirectEtterLagring.replace(':id', data.varenummer));
+    // Steg 4: Lagre score og kommentar
+    if (smaking) {
+      await supabase.from('scorer').insert({
+        smaking_id: smaking.id,
+        medlem_id: user.id,
+        score,
+      });
+
+      await supabase.from('kommentarer').insert({
+        smaking_id: smaking.id,
+        medlem_id: user.id,
+        tekst: kommentar.trim(),
+      });
+    }
+
+    if (redirectEtterLagring && smaking) {
+      router.push(redirectEtterLagring.replace(':id', smaking.varenummer));
       setLaster(false);
       return;
     }
@@ -165,6 +188,8 @@ export default function LeggTilVin({
       setNyligLagtTil(valgt);
       setValgt(null);
       setSok('');
+      setScore(null);
+      setKommentar('');
       router.refresh();
     }
     setLaster(false);
@@ -245,7 +270,14 @@ export default function LeggTilVin({
         </h3>
         {klubbkveldId && (
           <button
-            onClick={() => { setApen(false); setValgt(null); setSok(''); setFeil(null); }}
+            onClick={() => {
+              setApen(false);
+              setValgt(null);
+              setSok('');
+              setFeil(null);
+              setScore(null);
+              setKommentar('');
+            }}
             className="text-ink-700/50 hover:text-wine-700 text-sm font-sans"
           >
             Avbryt
@@ -315,7 +347,7 @@ export default function LeggTilVin({
           )}
         </>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex gap-4">
             {valgt.bilde_url && (
               <img src={valgt.bilde_url} alt="" className="w-20 h-28 object-contain" />
@@ -341,15 +373,67 @@ export default function LeggTilVin({
             </div>
           </div>
 
+          {/* Karakter */}
+          <div className="pt-4 border-t border-wine-900/10">
+            <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
+              Din karakter <span className="text-wine-700">*</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setScore(n)}
+                  className={`w-10 h-10 rounded-full font-display text-lg transition ${
+                    score === n
+                      ? 'bg-wine-700 text-cream-50'
+                      : 'bg-cream-100 text-wine-800 hover:bg-cream-200'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Kommentar */}
+          <div>
+            <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
+              Din anmeldelse <span className="text-wine-700">*</span>
+            </label>
+            <textarea
+              value={kommentar}
+              onChange={(e) => setKommentar(e.target.value)}
+              placeholder="Hva synes du om vinen? Smaksopplevelse, hva den passer til, anbefaler du den …"
+              rows={3}
+              className="input-field resize-none"
+            />
+            <p className="text-xs text-ink-700/50 font-sans mt-1.5 italic">
+              Andre medlemmer kan komme med sine kommentarer og scorer i etterkant.
+            </p>
+          </div>
+
           {feil && (
             <p className="text-sm text-wine-700 bg-wine-50 px-3 py-2 rounded">{feil}</p>
           )}
 
           <div className="flex gap-3">
-            <button onClick={leggTil} disabled={laster || henterDetaljer} className="btn-primary disabled:opacity-50">
-              {laster ? 'Legger til …' : 'Legg til'}
+            <button
+              onClick={leggTil}
+              disabled={laster || henterDetaljer || !score || !kommentar.trim()}
+              className="btn-primary disabled:opacity-50"
+            >
+              {laster ? 'Legger til …' : 'Legg til vin'}
             </button>
-            <button onClick={() => setValgt(null)} className="btn-secondary">
+            <button
+              onClick={() => {
+                setValgt(null);
+                setScore(null);
+                setKommentar('');
+                setFeil(null);
+              }}
+              className="btn-secondary"
+            >
               Velg en annen
             </button>
           </div>

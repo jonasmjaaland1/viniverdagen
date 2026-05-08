@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
+import Avatar from './Avatar';
 
 export default function SmakingsKort({
   smaking,
@@ -30,6 +31,30 @@ export default function SmakingsKort({
     ? (scorer.reduce((a: number, b: any) => a + b.score, 0) / scorer.length).toFixed(1)
     : null;
   const erFrittstaende = !smaking.klubbkveld_id;
+  const tattMedAvId = smaking.tatt_med_av;
+
+  // Finn hovedanmelder (den som la til vinen) sin kommentar og score
+  const hovedanmelderKommentar = kommentarer.find(
+    (k: any) => k.medlem_id === tattMedAvId
+  );
+  const hovedanmelderScore = scorer.find(
+    (s: any) => s.medlem_id === tattMedAvId
+  );
+
+  // Andre kommentarer (fra andre enn hovedanmelder)
+  const andreKommentarer = kommentarer.filter(
+    (k: any) => k.medlem_id !== tattMedAvId
+  );
+
+  // Sortér eldste først så det leses kronologisk
+  const andreKommentarerSortert = [...andreKommentarer].sort((a, b) =>
+    new Date(a.opprettet_at).getTime() - new Date(b.opprettet_at).getTime()
+  );
+
+  // Andre scorer (fra andre enn hovedanmelder)
+  const andreScorer = scorer.filter((s: any) => s.medlem_id !== tattMedAvId);
+
+  const tattMedAvNavn = smaking.medlemmer?.navn || 'Ukjent';
 
   async function lagreScore() {
     if (!score) return;
@@ -100,14 +125,83 @@ export default function SmakingsKort({
             )}
           </div>
 
-          {smaking.medlemmer?.navn && (
-            <p className="text-sm font-sans text-ink-700/70 mt-3 italic">
-              {erFrittstaende ? 'Lagt til av' : 'Tatt med av'} {smaking.medlemmer.navn}
-            </p>
+          {/* HOVEDANMELDELSE - uthevet ramme med stor avatar */}
+          <div className="mt-5 p-5 bg-cream-100/50 border-l-4 border-wine-700 rounded">
+            <div className="flex items-start gap-4">
+              <Avatar navn={tattMedAvNavn} storrelse="stor" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="font-display text-lg text-wine-900">
+                    {tattMedAvNavn}
+                    <span className="ml-2 text-xs uppercase tracking-wider font-sans text-wine-700">
+                      {erFrittstaende ? 'la til' : 'tok med'}
+                    </span>
+                  </p>
+                  {hovedanmelderScore && (
+                    <span className="font-display text-2xl text-wine-700">
+                      ★ {hovedanmelderScore.score}
+                    </span>
+                  )}
+                </div>
+                {hovedanmelderKommentar ? (
+                  <p className="text-base font-sans text-ink-700/85 leading-relaxed mt-2 italic">
+                    "{hovedanmelderKommentar.tekst}"
+                  </p>
+                ) : (
+                  <p className="text-sm font-sans text-ink-700/50 italic mt-2">
+                    (Ingen anmeldelse)
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Andre scorer (compactly) */}
+          {andreScorer.length > 0 && (
+            <div className="mt-5">
+              <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-2">
+                Andre scorer
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {andreScorer.map((s: any) => (
+                  <span
+                    key={s.id}
+                    className="text-xs font-sans px-3 py-1 bg-cream-100 rounded-full"
+                  >
+                    {s.medlemmer?.navn}: <span className="font-medium text-wine-700">{s.score}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
 
+          {/* Andre kommentarer */}
+          {andreKommentarerSortert.length > 0 && (
+            <div className="mt-5">
+              <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-3">
+                Andre kommentarer ({andreKommentarerSortert.length})
+              </p>
+              <ul className="space-y-3">
+                {andreKommentarerSortert.map((k: any) => (
+                  <li key={k.id} className="flex gap-3 items-start">
+                    <Avatar navn={k.medlemmer?.navn} storrelse="liten" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-sans text-ink-700/85 leading-relaxed">
+                        {k.tekst}
+                      </p>
+                      <p className="text-xs font-sans text-ink-700/50 mt-1">
+                        {k.medlemmer?.navn} · {new Date(k.opprettet_at).toLocaleDateString('nb-NO')}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Egen score-input - bare hvis ikke allerede scoret */}
           {kanScoreOgKommentere && !minScore && (
-            <div className="mt-5 pt-5 border-t border-wine-900/10">
+            <div className="mt-6 pt-5 border-t border-wine-900/10">
               <p className="text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
                 Din score
               </p>
@@ -140,63 +234,33 @@ export default function SmakingsKort({
           )}
 
           {kanScoreOgKommentere && minScore && (
-            <p className="mt-4 text-sm font-sans text-ink-700/70">
+            <p className="mt-5 text-sm font-sans text-ink-700/70">
               Du ga denne <span className="text-wine-700 font-medium">{minScore.score}</span>.
             </p>
           )}
 
-          {scorer.length > 0 && (
-            <div className="mt-4">
+          {/* Skriv kommentar */}
+          {kanScoreOgKommentere && (
+            <div className="mt-5 pt-5 border-t border-wine-900/10">
               <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-2">
-                Scorer
+                Skriv en kommentar
               </p>
-              <div className="flex flex-wrap gap-2">
-                {scorer.map((s: any) => (
-                  <span key={s.id} className="text-xs font-sans px-3 py-1 bg-cream-100 rounded-full">
-                    {s.medlemmer?.navn}: <span className="font-medium text-wine-700">{s.score}</span>
-                  </span>
-                ))}
-              </div>
+              <textarea
+                value={kommentar}
+                onChange={(e) => setKommentar(e.target.value)}
+                placeholder="Hva synes du om vinen?"
+                rows={2}
+                className="input-field resize-none mb-2"
+              />
+              <button
+                onClick={lagreKommentar}
+                disabled={!kommentar.trim() || laster}
+                className="btn-secondary text-xs disabled:opacity-50"
+              >
+                Legg til kommentar
+              </button>
             </div>
           )}
-
-          <div className="mt-6 pt-5 border-t border-wine-900/10">
-            <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-3">
-              Kommentarer ({kommentarer.length})
-            </p>
-
-            {kommentarer.length > 0 && (
-              <ul className="space-y-3 mb-4">
-                {kommentarer.map((k: any) => (
-                  <li key={k.id} className="text-base">
-                    <p className="text-ink-700/80 leading-relaxed">{k.tekst}</p>
-                    <p className="text-xs font-sans text-ink-700/50 mt-1">
-                      — {k.medlemmer?.navn}, {new Date(k.opprettet_at).toLocaleDateString('nb-NO')}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {kanScoreOgKommentere && (
-              <>
-                <textarea
-                  value={kommentar}
-                  onChange={(e) => setKommentar(e.target.value)}
-                  placeholder="Skriv en kommentar …"
-                  rows={2}
-                  className="input-field resize-none mb-2"
-                />
-                <button
-                  onClick={lagreKommentar}
-                  disabled={!kommentar.trim() || laster}
-                  className="btn-secondary text-xs disabled:opacity-50"
-                >
-                  Legg til kommentar
-                </button>
-              </>
-            )}
-          </div>
         </div>
       </div>
     </article>
