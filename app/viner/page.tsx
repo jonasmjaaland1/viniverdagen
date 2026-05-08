@@ -1,143 +1,162 @@
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase-server';
-import VinFilter from '@/components/VinFilter';
-import Avatar from '@/components/Avatar';
+import { createClient } from "@/lib/supabase-server";
+import { redirect, notFound } from "next/navigation";
+import Link from "next/link";
+import SmakingsKort from "@/components/SmakingsKort";
+import DelPaWhatsApp from "@/components/DelPaWhatsApp";
+import SlettVinKnapp from "@/components/SlettVinKnapp";
+import MineVinerKnapp from "@/components/MineVinerKnapp";
+import VinAktivitet from "@/components/VinAktivitet";
 
-export default async function VinOversikt({
-  searchParams,
+export default async function VinDetaljSide({
+  params,
 }: {
-  searchParams: Promise<{ kategori?: string; minScore?: string }>;
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   const supabase = await createClient();
-  const params = await searchParams;
-  const kategori = params.kategori;
-  const minScore = params.minScore ? parseFloat(params.minScore) : null;
 
-  let query = supabase.from('vin_oversikt').select('*');
-  if (kategori && kategori !== 'alle') {
-    query = query.eq('hovedkategori', kategori);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: medlem } = await supabase
+    .from("medlemmer")
+    .select("godkjent, er_klubbmedlem, er_admin")
+    .eq("id", user.id)
+    .single();
+
+  if (!medlem?.godkjent) {
+    redirect("/login");
   }
-  if (minScore) {
-    query = query.gte('snitt_total', minScore);
+
+  // Hent vin-data
+  const { data: vin } = await supabase
+    .from("vinmonopol_produkter")
+    .select("*")
+    .eq("varenummer", id)
+    .single();
+
+  if (!vin) {
+    notFound();
   }
 
-  const { data: viner } = await query.order('snitt_total', { ascending: false, nullsFirst: false });
+  // Hent alle smakinger av denne vinen
+  const { data: smakinger } = await supabase
+    .from("smakinger")
+    .select(
+      `
+      *,
+      vinmonopol_produkter (*),
+      medlemmer:tatt_med_av (navn),
+      scorer (id, score, medlem_id, medlemmer (navn)),
+      kommentarer (id, tekst, medlem_id, opprettet_at, medlemmer (navn))
+    `,
+    )
+    .eq("varenummer", id)
+    .order("opprettet_at", { ascending: false });
 
-  // Hent hovedanmeldelse for hver vin
-  const varenumre = (viner || []).map((v: any) => v.varenummer);
-  let hovedAnmeldelser: Record<string, { navn: string; tekst: string; score: number | null }> = {};
-
-  if (varenumre.length > 0) {
-    // Hent smakinger for å finne hvem som tok med
-    const { data: smakinger } = await supabase
-      .from('smakinger')
-      .select(`
-        varenummer,
-        tatt_med_av,
-        opprettet_at,
-        medlemmer:tatt_med_av (navn),
-        kommentarer (tekst, medlem_id, opprettet_at),
-        scorer (score, medlem_id)
-      `)
-      .in('varenummer', varenumre)
-      .order('opprettet_at', { ascending: true });
-
-    // For hver vin, finn første smaking og dens hovedanmelder-kommentar
-    if (smakinger) {
-      for (const s of smakinger as any[]) {
-        if (hovedAnmeldelser[s.varenummer]) continue; // Allerede funnet
-        const kommentar = s.kommentarer?.find((k: any) => k.medlem_id === s.tatt_med_av);
-        const score = s.scorer?.find((sc: any) => sc.medlem_id === s.tatt_med_av);
-        if (kommentar) {
-          hovedAnmeldelser[s.varenummer] = {
-            navn: s.medlemmer?.navn || 'Ukjent',
-            tekst: kommentar.tekst,
-            score: score?.score || null,
-          };
-        }
-      }
-    }
-  }
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+  const vinUrl = `${baseUrl}/viner/${id}`;
+  let delTekst = `🍷 Sjekk ut *${vin.navn}*`;
+  const detaljer = [vin.hovedkategori, vin.land].filter(Boolean).join(" · ");
+  if (detaljer) delTekst += `\n${detaljer}`;
+  if (vin.pris) delTekst += `\n💰 ${Number(vin.pris).toFixed(0)} kr`;
+  delTekst += `\n\n${vinUrl}`;
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-12">
-      <div className="text-center mb-10">
-        <h1 className="font-display text-5xl text-wine-900 mb-3">Alle viner</h1>
-        <div className="gold-line w-24 mx-auto" />
-      </div>
+    <div className="space-y-8">
+      <Link
+        href="/viner"
+        className="text-sm font-sans text-wine-700 hover:text-wine-900"
+      >
+        ← Tilbake til viner
+      </Link>
 
-      <VinFilter />
+      {/* Vin-info */}
+      <article className="kort p-6 md:p-8">
+        <div className="flex flex-col sm:flex-row gap-6">
+          {vin.bilde_url && (
+            <img
+              src={vin.bilde_url}
+              alt={vin.navn}
+              className="w-32 h-48 object-contain mx-auto sm:mx-0 flex-shrink-0"
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <h1 className="font-display text-3xl text-wine-900">{vin.navn}</h1>
+            <p className="text-base font-sans text-ink-700/70 mt-2">
+              {[vin.hovedkategori, vin.land, vin.distrikt, vin.produsent]
+                .filter(Boolean)
+                .join(" · ")}
+              {vin.alkoholprosent && ` · ${vin.alkoholprosent}%`}
+            </p>
+            {vin.pris && (
+              <p className="text-xl text-wine-700 font-display mt-3">
+                {Number(vin.pris).toFixed(2)} kr
+              </p>
+            )}
+            {vin.smak && (
+              <p className="text-sm font-sans text-ink-700/80 mt-4 italic">
+                {vin.smak}
+              </p>
+            )}
 
-      {(!viner || viner.length === 0) ? (
-        <p className="text-center text-ink-700/60 italic py-20">
-          Ingen viner matcher filteret.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-8">
-          {viner.map((v: any) => {
-            const anmeldelse = hovedAnmeldelser[v.varenummer];
-            return (
-              <Link
-                key={v.varenummer}
-                href={`/viner/${v.varenummer}`}
-                className="kort p-5 flex gap-4 hover:shadow-md transition"
-              >
-                {v.bilde_url && (
-                  <img
-                    src={v.bilde_url}
-                    alt={v.navn}
-                    className="w-16 h-24 object-contain flex-shrink-0"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="font-display text-lg text-wine-900 leading-tight">{v.navn}</h3>
-                      <p className="text-xs font-sans text-ink-700/60 mt-1">
-                        {[v.hovedkategori, v.land].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    {v.snitt_total && (
-                      <p className="font-display text-2xl text-wine-800 flex-shrink-0">
-                        ★ {v.snitt_total}
-                      </p>
-                    )}
-                  </div>
+            {/* Mine viner-knapper */}
+            <div className="mt-5">
+              <MineVinerKnapp varenummer={id} brukerId={user.id} />
+            </div>
 
-                  {anmeldelse && (
-                    <div className="mt-3 pt-3 border-t border-wine-900/10">
-                      <div className="flex items-start gap-2">
-                        <Avatar navn={anmeldelse.navn} storrelse="liten" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="text-xs font-display text-wine-700 truncate">
-                              {anmeldelse.navn}
-                            </p>
-                            {anmeldelse.score && (
-                              <span className="text-xs font-display text-wine-700 flex-shrink-0">
-                                ★ {anmeldelse.score}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs font-sans text-ink-700/75 italic line-clamp-3 leading-relaxed">
-                            "{anmeldelse.tekst}"
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <p className="text-xs font-sans text-ink-700/50 mt-2">
-                    {v.antall_smakinger} {v.antall_smakinger === 1 ? 'smaking' : 'smakinger'}
-                    {v.forste_klubbkveld && (
-                      <> · siden {new Date(v.forste_klubbkveld).getFullYear()}</>
-                    )}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
+            <div className="flex flex-wrap gap-3 mt-5">
+              {vin.produkt_url && (
+                <a
+                  href={vin.produkt_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary text-xs"
+                >
+                  Se på Vinmonopolet ↗
+                </a>
+              )}
+              <DelPaWhatsApp tekst={delTekst} />
+            </div>
+          </div>
         </div>
+      </article>
+
+      {/* Klubbens aktivitet på denne vinen */}
+      <VinAktivitet varenummer={id} />
+
+      {/* Smakinger */}
+      <section>
+        <h2 className="font-display text-2xl text-wine-900 mb-4">
+          Smakinger ({smakinger?.length || 0})
+        </h2>
+        {smakinger && smakinger.length > 0 ? (
+          <div className="space-y-4">
+            {smakinger.map((s: any) => (
+              <SmakingsKort
+                key={s.id}
+                smaking={s}
+                brukerId={user.id}
+                visVin={false}
+                kanScoreOgKommentere={!s.klubbkveld_id || medlem.er_klubbmedlem}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-ink-700/60 italic">Ingen smakinger ennå.</p>
+        )}
+      </section>
+
+      {/* Admin-handlinger */}
+      {medlem.er_admin && (
+        <section className="pt-8 border-t border-wine-900/10">
+          <h2 className="font-display text-lg text-ink-700/60 mb-3">
+            Administrator
+          </h2>
+          <SlettVinKnapp varenummer={id} vinNavn={vin.navn} />
+        </section>
       )}
     </div>
   );
