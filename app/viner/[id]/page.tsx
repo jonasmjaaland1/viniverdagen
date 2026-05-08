@@ -1,9 +1,11 @@
-import { createClient } from '@/lib/supabase-server';
-import { redirect, notFound } from 'next/navigation';
-import Link from 'next/link';
-import SmakingsKort from '@/components/SmakingsKort';
-import DelPaWhatsApp from '@/components/DelPaWhatsApp';
-import SlettVinKnapp from '@/components/SlettVinKnapp';
+import { createClient } from "@/lib/supabase-server";
+import { redirect, notFound } from "next/navigation";
+import Link from "next/link";
+import SmakingsKort from "@/components/SmakingsKort";
+import DelPaWhatsApp from "@/components/DelPaWhatsApp";
+import SlettVinKnapp from "@/components/SlettVinKnapp";
+import MineVinerKnapp from "@/components/MineVinerKnapp";
+import VinAktivitet from "@/components/VinAktivitet";
 
 export default async function VinDetaljSide({
   params,
@@ -13,24 +15,26 @@ export default async function VinDetaljSide({
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   const { data: medlem } = await supabase
-    .from('medlemmer')
-    .select('godkjent, er_klubbmedlem, er_admin')
-    .eq('id', user.id)
+    .from("medlemmer")
+    .select("godkjent, er_klubbmedlem, er_admin")
+    .eq("id", user.id)
     .single();
 
   if (!medlem?.godkjent) {
-    redirect('/login');
+    redirect("/login");
   }
 
   // Hent vin-data
   const { data: vin } = await supabase
-    .from('vinmonopol_produkter')
-    .select('*')
-    .eq('varenummer', id)
+    .from("vinmonopol_produkter")
+    .select("*")
+    .eq("varenummer", id)
     .single();
 
   if (!vin) {
@@ -39,21 +43,23 @@ export default async function VinDetaljSide({
 
   // Hent alle smakinger av denne vinen
   const { data: smakinger } = await supabase
-    .from('smakinger')
-    .select(`
+    .from("smakinger")
+    .select(
+      `
       *,
       vinmonopol_produkter (*),
       medlemmer:tatt_med_av (navn),
       scorer (id, score, medlem_id, medlemmer (navn)),
       kommentarer (id, tekst, medlem_id, opprettet_at, medlemmer (navn))
-    `)
-    .eq('varenummer', id)
-    .order('opprettet_at', { ascending: false });
+    `,
+    )
+    .eq("varenummer", id)
+    .order("opprettet_at", { ascending: false });
 
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || '';
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
   const vinUrl = `${baseUrl}/viner/${id}`;
   let delTekst = `🍷 Sjekk ut *${vin.navn}*`;
-  const detaljer = [vin.hovedkategori, vin.land].filter(Boolean).join(' · ');
+  const detaljer = [vin.hovedkategori, vin.land].filter(Boolean).join(" · ");
   if (detaljer) delTekst += `\n${detaljer}`;
   if (vin.pris) delTekst += `\n💰 ${Number(vin.pris).toFixed(0)} kr`;
   delTekst += `\n\n${vinUrl}`;
@@ -82,7 +88,7 @@ export default async function VinDetaljSide({
             <p className="text-base font-sans text-ink-700/70 mt-2">
               {[vin.hovedkategori, vin.land, vin.distrikt, vin.produsent]
                 .filter(Boolean)
-                .join(' · ')}
+                .join(" · ")}
               {vin.alkoholprosent && ` · ${vin.alkoholprosent}%`}
             </p>
             {vin.pris && (
@@ -95,6 +101,12 @@ export default async function VinDetaljSide({
                 {vin.smak}
               </p>
             )}
+
+            {/* Mine viner-knapper */}
+            <div className="mt-5">
+              <MineVinerKnapp varenummer={id} brukerId={user.id} />
+            </div>
+
             <div className="flex flex-wrap gap-3 mt-5">
               {vin.produkt_url && (
                 <a
@@ -111,6 +123,9 @@ export default async function VinDetaljSide({
           </div>
         </div>
       </article>
+
+      {/* Klubbens aktivitet på denne vinen */}
+      <VinAktivitet varenummer={id} />
 
       {/* Smakinger */}
       <section>
