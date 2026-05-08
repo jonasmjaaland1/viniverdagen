@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createClient } from '@/lib/supabase-browser';
 import Melding from './Melding';
+import Avatar from './Avatar';
 
 interface MeldingType {
   id: string;
@@ -20,6 +21,12 @@ interface MeldingType {
     bilde_url: string | null;
     medlemmer?: { navn: string };
   } | null;
+}
+
+interface SistSettType {
+  medlem_id: string;
+  sist_sett: string;
+  medlemmer?: { navn: string };
 }
 
 export default function Chat({
@@ -41,6 +48,7 @@ export default function Chat({
   const [feil, setFeil] = useState<string | null>(null);
   const [valgtBilde, setValgtBilde] = useState<File | null>(null);
   const [bildeForhandsvisning, setBildeForhandsvisning] = useState<string | null>(null);
+  const [aktivitet, setAktivitet] = useState<SistSettType[]>([]);
   const meldingsListeRef = useRef<HTMLDivElement>(null);
   const filInputRef = useRef<HTMLInputElement>(null);
 
@@ -54,6 +62,43 @@ export default function Chat({
     scrollTilBunnen();
   }, [meldinger.length, scrollTilBunnen]);
 
+  // Oppdater "sist sett" for denne brukeren
+  const oppdaterSistSett = useCallback(async () => {
+    await supabase
+      .from('chat_aktivitet')
+      .upsert({
+        medlem_id: brukerId,
+        sist_sett: new Date().toISOString(),
+      });
+  }, [supabase, brukerId]);
+
+  // Oppdater sist sett når man kommer inn, og hvert 30. sek
+  useEffect(() => {
+    oppdaterSistSett();
+    const interval = setInterval(oppdaterSistSett, 30000);
+    return () => clearInterval(interval);
+  }, [oppdaterSistSett]);
+
+  // Også når ny melding kommer eller bruker scroller
+  useEffect(() => {
+    if (meldinger.length > 0) {
+      oppdaterSistSett();
+    }
+  }, [meldinger.length, oppdaterSistSett]);
+
+  // Hent aktivitet ved oppstart
+  useEffect(() => {
+    async function hentAktivitet() {
+      const { data } = await supabase
+        .from('chat_aktivitet')
+        .select('medlem_id, sist_sett, medlemmer(navn)')
+        .neq('medlem_id', brukerId);
+      if (data) setAktivitet(data as any);
+    }
+    hentAktivitet();
+  }, [supabase, brukerId]);
+
+  // Realtime: meldinger
   useEffect(() => {
     const channel = supabase
       .channel('meldinger-channel')
@@ -120,20 +165,49 @@ export default function Chat({
     };
   }, [supabase]);
 
+  // Realtime: chat_aktivitet
+  useEffect(() => {
+    const channel = supabase
+      .channel('aktivitet-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'chat_aktivitet' },
+        async (payload) => {
+          const nyMedlemId = (payload.new as any)?.medlem_id;
+          if (!nyMedlemId || nyMedlemId === brukerId) return;
+
+          const { data } = await supabase
+            .from('chat_aktivitet')
+            .select('medlem_id, sist_sett, medlemmer(navn)')
+            .eq('medlem_id', nyMedlemId)
+            .single();
+
+          if (data) {
+            setAktivitet((prev) => {
+              const filtrert = prev.filter((a) => a.medlem_id !== nyMedlemId);
+              return [...filtrert, data as any];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, brukerId]);
+
   function velgBilde(e: React.ChangeEvent<HTMLInputElement>) {
     const fil = e.target.files?.[0];
     if (!fil) return;
-
     if (fil.size > 5 * 1024 * 1024) {
       setFeil('Bilde må være under 5 MB.');
       return;
     }
-
     if (!fil.type.startsWith('image/')) {
       setFeil('Bare bildefiler er tillatt.');
       return;
     }
-
     setValgtBilde(fil);
     setBildeForhandsvisning(URL.createObjectURL(fil));
     setFeil(null);
@@ -190,6 +264,7 @@ export default function Chat({
     setSvarerTil(null);
     fjernBilde();
     setSender(false);
+    oppdaterSistSett();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -198,6 +273,17 @@ export default function Chat({
       sendMelding();
     }
   }
+
+  // Beregn hvem som har sett siste melding fra meg
+  const minSisteMelding = [...meldinger]
+    .reverse()
+    .find((m) => m.medlem_id === brukerId);
+
+  const sett_av = minSisteMelding
+    ? aktivitet.filter((a) => {
+        return new Date(a.sist_sett) >= new Date(minSisteMelding.opprettet_at);
+      })
+    : [];
 
   return (
     <div className="kort flex flex-col h-[calc(100vh-220px)] min-h-[500px] max-h-[800px] overflow-hidden">
@@ -210,26 +296,50 @@ export default function Chat({
             Ingen meldinger ennå. Vær den første!
           </p>
         ) : (
-          meldinger.map((m, i) => {
-            const forrige = i > 0 ? meldinger[i - 1] : null;
-            const visAvsender =
-              !forrige ||
-              forrige.medlem_id !== m.medlem_id ||
-              new Date(m.opprettet_at).getTime() -
-                new Date(forrige.opprettet_at).getTime() >
-                5 * 60 * 1000;
+          <>
+            {meldinger.map((m, i) => {
+              const forrige = i > 0 ? meldinger[i - 1] : null;
+              const visAvsender =
+                !forrige ||
+                forrige.medlem_id !== m.medlem_id ||
+                new Date(m.opprettet_at).getTime() -
+                  new Date(forrige.opprettet_at).getTime() >
+                  5 * 60 * 1000;
 
-            return (
-              <Melding
-                key={m.id}
-                melding={m}
-                erMin={m.medlem_id === brukerId}
-                visAvsender={visAvsender}
-                paSvar={() => setSvarerTil(m)}
-                erAdmin={erAdmin}
-              />
-            );
-          })
+              return (
+                <Melding
+                  key={m.id}
+                  melding={m}
+                  erMin={m.medlem_id === brukerId}
+                  visAvsender={visAvsender}
+                  paSvar={() => setSvarerTil(m)}
+                  erAdmin={erAdmin}
+                />
+              );
+            })}
+
+            {/* "Lest av"-indikator under siste melding fra meg */}
+            {sett_av.length > 0 && minSisteMelding && (
+              <div className="flex justify-end items-center gap-2 mt-1 mr-1 pb-1">
+                <span className="text-[10px] text-ink-700/50 font-sans">Sett av</span>
+                <div className="flex -space-x-1">
+                  {sett_av.slice(0, 5).map((a) => (
+                    <Avatar
+                      key={a.medlem_id}
+                      navn={a.medlemmer?.navn}
+                      storrelse="liten"
+                      tittel={`${a.medlemmer?.navn} (${new Date(a.sist_sett).toLocaleString('nb-NO')})`}
+                    />
+                  ))}
+                  {sett_av.length > 5 && (
+                    <span className="text-[10px] text-ink-700/50 ml-2 self-center">
+                      +{sett_av.length - 5}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 

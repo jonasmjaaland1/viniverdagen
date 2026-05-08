@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase-browser';
+import Avatar from './Avatar';
 
 interface MeldingType {
   id: string;
@@ -79,10 +80,17 @@ export default function Melding({
   }
 
   return (
-    <div className={`flex ${erMin ? 'justify-end' : 'justify-start'} group`}>
-      <div className={`max-w-[85%] ${erMin ? 'order-2' : 'order-1'}`}>
+    <div className={`flex items-end gap-2 ${erMin ? 'justify-end' : 'justify-start'} group`}>
+      {/* Avatar venstre side (for andres meldinger) */}
+      {!erMin && (
+        <div className={visAvsender ? 'opacity-100' : 'opacity-0'}>
+          <Avatar navn={melding.medlemmer?.navn} storrelse="medium" />
+        </div>
+      )}
+
+      <div className={`max-w-[78%] ${erMin ? 'order-2' : 'order-1'}`}>
         {visAvsender && !erMin && (
-          <p className="text-xs font-display text-wine-700 mb-1 ml-3">
+          <p className="text-xs font-display text-wine-700 mb-1 ml-1">
             {melding.medlemmer?.navn || 'Ukjent'}
           </p>
         )}
