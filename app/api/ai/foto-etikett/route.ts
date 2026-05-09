@@ -1,11 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { createClient, createServiceClient } from "@/lib/supabase-server";
+import {
+  sokVinmonopolet,
+  hentProdukt,
+  tilHovedkategori,
+} from "@/lib/vinmonopolet";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   try {
+    // Sjekk auth
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ feil: "Ikke innlogget" }, { status: 401 });
+    }
+
     const formData = await req.formData();
     const fil = formData.get("bilde") as File | null;
 
@@ -13,7 +28,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ feil: "Bilde mangler" }, { status: 400 });
     }
 
-    // Konverter bilde til base64
     const buffer = Buffer.from(await fil.arrayBuffer());
     const base64 = buffer.toString("base64");
     const mediaType = fil.type as
@@ -33,7 +47,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Sjekk størrelse - max 5MB
     if (buffer.length > 5 * 1024 * 1024) {
       return NextResponse.json(
         { feil: "Bildet er for stort. Maks 5MB." },
@@ -94,7 +107,6 @@ Returner kun JSON, ingenting annet.`,
       ],
     });
 
-    // Hent ut tekstinnholdet
     const tekstinnhold = response.content.find((c: any) => c.type === "text");
     if (!tekstinnhold || tekstinnhold.type !== "text") {
       return NextResponse.json(
@@ -105,7 +117,6 @@ Returner kun JSON, ingenting annet.`,
 
     let parsed;
     try {
-      // Fjern eventuelle markdown-fences hvis Claude la dem til
       const renTekst = tekstinnhold.text
         .replace(/```json\s*/g, "")
         .replace(/```\s*/g, "")
@@ -122,16 +133,37 @@ Returner kun JSON, ingenting annet.`,
       return NextResponse.json({ feil: parsed.feil }, { status: 400 });
     }
 
-    // Søk opp i Vinmonopolet basert på sokestreng
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin;
-    const sokRes = await fetch(
-      `${baseUrl}/api/vinmonopolet/sok?q=${encodeURIComponent(parsed.sokestreng || parsed.vinnavn || parsed.navn)}`,
-    );
-    const sokData = await sokRes.json();
+    // Søk i Vinmonopolet DIREKTE via helper-funksjonen
+    const sokestreng = parsed.sokestreng || parsed.vinnavn || parsed.navn;
+    let resultater: any[] = [];
+
+    try {
+      resultater = await sokVinmonopolet(supabase, sokestreng, 10);
+
+      // Hvis ingen treff og det er et tall, prøv som varenummer
+      if (resultater.length === 0 && /^\d+$/.test(sokestreng)) {
+        const produkt = await hentProdukt(sokestreng);
+        if (produkt && produkt.varenummer) {
+          const service = createServiceClient();
+          await service.from("vinmonopol_produkter").upsert(
+            {
+              ...produkt,
+              hovedkategori: tilHovedkategori(produkt.produkttype),
+              sist_oppdatert: new Date().toISOString(),
+            },
+            { onConflict: "varenummer" },
+          );
+          resultater = [produkt];
+        }
+      }
+    } catch (e) {
+      // Hvis søk feiler, returner i hvert fall identifisert
+      resultater = [];
+    }
 
     return NextResponse.json({
       identifisert: parsed,
-      resultater: sokData.resultater || [],
+      resultater,
     });
   } catch (e: any) {
     console.error("AI-foto-feil:", e);
