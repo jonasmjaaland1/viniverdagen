@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-browser';
 import DelPaWhatsApp from './DelPaWhatsApp';
 import FotoAvEtikett from './FotoAvEtikett';
+import SmaksHjelper from './SmaksHjelper';
 
 interface Produkt {
   varenummer: string;
@@ -37,6 +38,7 @@ export default function LeggTilVin({
   const [score, setScore] = useState<number | null>(null);
   const [kommentar, setKommentar] = useState('');
   const [visFotoAvEtikett, setVisFotoAvEtikett] = useState(false);
+  const [visSmaksHjelper, setVisSmaksHjelper] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -83,6 +85,11 @@ export default function LeggTilVin({
   function fotoTreff(produkt: Produkt) {
     setVisFotoAvEtikett(false);
     velgVin(produkt);
+  }
+
+  function smaksForslag(tekst: string) {
+    setKommentar(tekst);
+    setVisSmaksHjelper(false);
   }
 
   async function leggTil() {
@@ -250,6 +257,18 @@ export default function LeggTilVin({
         />
       )}
 
+      {visSmaksHjelper && valgt && (
+        <SmaksHjelper
+          vinKontekst={{
+            navn: valgt.navn,
+            type: valgt.hovedkategori,
+            land: valgt.land,
+          }}
+          onLagre={smaksForslag}
+          onLukk={() => setVisSmaksHjelper(false)}
+        />
+      )}
+
       <div className="kort p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-xl text-wine-900">
@@ -390,9 +409,18 @@ export default function LeggTilVin({
             </div>
 
             <div>
-              <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
-                Din anmeldelse <span className="text-wine-700">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60">
+                  Din anmeldelse <span className="text-wine-700">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setVisSmaksHjelper(true)}
+                  className="text-xs font-sans text-wine-700 hover:text-wine-900 flex items-center gap-1 transition"
+                >
+                  ✨ AI-hjelper
+                </button>
+              </div>
               <textarea
                 value={kommentar}
                 onChange={(e) => setKommentar(e.target.value)}
@@ -401,7 +429,7 @@ export default function LeggTilVin({
                 className="input-field resize-none"
               />
               <p className="text-xs text-ink-700/50 font-sans mt-1.5 italic">
-                Andre medlemmer kan komme med sine kommentarer og scorer i etterkant.
+                Tips: Klikk ✨ AI-hjelper hvis du har enkle stikkord men trenger hjelp til å skrive
               </p>
             </div>
 
