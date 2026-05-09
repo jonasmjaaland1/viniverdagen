@@ -123,7 +123,7 @@ Returner kun JSON, ingenting annet.`,
     }
 
     // Søk opp i Vinmonopolet basert på sokestreng
-    const baseUrl = req.nextUrl.origin;
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || req.nextUrl.origin;
     const sokRes = await fetch(
       `${baseUrl}/api/vinmonopolet/sok?q=${encodeURIComponent(parsed.sokestreng || parsed.vinnavn || parsed.navn)}`,
     );
