@@ -190,7 +190,7 @@ export default function Melding({
               </button>
               {meny && (
                 <div
-                  className={`absolute top-8 ${erMin ? 'left-0' : 'right-0'} bg-cream-50 border border-wine-900/10 rounded shadow-lg z-10 min-w-[120px]`}
+                  className={`absolute top-8 ${erMin ? 'left-0' : 'right-0'} bg-cream-50 border border-wine-900/10 rounded shadow-lg z-50 min-w-[120px]`}
                 >
                   <button
                     onClick={() => { paSvar(); setMeny(false); }}
