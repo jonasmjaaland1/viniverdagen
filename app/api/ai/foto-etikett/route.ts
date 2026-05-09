@@ -12,7 +12,6 @@ export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   try {
-    // Sjekk auth
     const supabase = await createClient();
     const {
       data: { user },
@@ -66,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
+      max_tokens: 800,
       messages: [
         {
           role: "user",
@@ -81,26 +80,34 @@ export async function POST(req: NextRequest) {
             },
             {
               type: "text",
-              text: `Du ser på bildet av en vinetikett. Identifiser vinen og returner KUN gyldig JSON med følgende struktur (ingen forklaring, ingen markdown):
+              text: `Du ser på en vinetikett. Identifiser vinen og returner KUN gyldig JSON (ingen markdown, ingen forklaring):
 
 {
-  "navn": "produsent + vinnavn (f.eks. Antinori Tignanello)",
-  "produsent": "produsenten",
-  "vinnavn": "navnet på vinen uten produsent",
+  "produsent": "produsenten med korrekt skrivemåte (med bindestrek hvis det er det)",
+  "vinnavn": "navnet på vinen",
+  "drueype": "druetype hvis synlig (f.eks. Riesling, Pinot Noir)",
   "argang": "årstall hvis synlig, ellers null",
-  "land": "landet hvis du kan se det",
+  "land": "landet",
   "type": "rødvin/hvitvin/rosévin/musserende/dessertvin/annet",
-  "sokestreng": "kortest mulig søkestreng for å finne vinen på Vinmonopolet (uten årstall)"
+  "sokestrenger": [
+    "den mest sannsynlige korte søkestrengen for Vinmonopolet",
+    "en kortere variant kun produsent + ett sentralt ord",
+    "kun produsentnavn"
+  ]
 }
 
-Hvis du ikke ser en vinetikett tydelig, returner: {"feil": "Kunne ikke lese vinetiketten tydelig"}
+Sokestrenger MÅ være 3 ulike forsøk fra mest spesifikk til minst:
+- Forsøk 1: produsent + vinnavn (uten årstall)
+- Forsøk 2: produsent + ett sentralt ord
+- Forsøk 3: kun produsenten
 
-Eksempel sokestreng:
-- "Antinori Tignanello" → "Tignanello"
-- "Domaine de la Romanée-Conti La Tâche" → "La Tâche"
-- "Château Margaux" → "Château Margaux"
+Eksempler:
+- "Kruger-Rumpf Phyllit" → ["Kruger-Rumpf Phyllit Riesling", "Kruger-Rumpf Phyllit", "Kruger-Rumpf"]
+- "Antinori Tignanello" → ["Antinori Tignanello", "Tignanello", "Antinori"]
 
-Returner kun JSON, ingenting annet.`,
+Hvis du ikke ser vinetikett: {"feil": "Kunne ikke lese vinetiketten tydelig"}
+
+Returner kun JSON.`,
             },
           ],
         },
@@ -133,37 +140,42 @@ Returner kun JSON, ingenting annet.`,
       return NextResponse.json({ feil: parsed.feil }, { status: 400 });
     }
 
-    // Søk i Vinmonopolet DIREKTE via helper-funksjonen
-    const sokestreng = parsed.sokestreng || parsed.vinnavn || parsed.navn;
+    // Bygg en visningsstreng
+    const navn = `${parsed.produsent || ""} ${parsed.vinnavn || ""}`.trim();
+    const identifisert = {
+      navn,
+      produsent: parsed.produsent,
+      vinnavn: parsed.vinnavn,
+      drueype: parsed.drueype,
+      argang: parsed.argang,
+      land: parsed.land,
+      type: parsed.type,
+    };
+
+    // Prøv flere søkestrenger til vi finner noe
+    const sokestrenger = parsed.sokestrenger || [navn];
     let resultater: any[] = [];
+    let brukteSokestreng = "";
 
-    try {
-      resultater = await sokVinmonopolet(supabase, sokestreng, 10);
-
-      // Hvis ingen treff og det er et tall, prøv som varenummer
-      if (resultater.length === 0 && /^\d+$/.test(sokestreng)) {
-        const produkt = await hentProdukt(sokestreng);
-        if (produkt && produkt.varenummer) {
-          const service = createServiceClient();
-          await service.from("vinmonopol_produkter").upsert(
-            {
-              ...produkt,
-              hovedkategori: tilHovedkategori(produkt.produkttype),
-              sist_oppdatert: new Date().toISOString(),
-            },
-            { onConflict: "varenummer" },
-          );
-          resultater = [produkt];
+    for (const sokestreng of sokestrenger) {
+      if (!sokestreng) continue;
+      try {
+        const trefferLokalt = await sokVinmonopolet(supabase, sokestreng, 10);
+        if (trefferLokalt.length > 0) {
+          resultater = trefferLokalt;
+          brukteSokestreng = sokestreng;
+          break;
         }
+      } catch {
+        continue;
       }
-    } catch (e) {
-      // Hvis søk feiler, returner i hvert fall identifisert
-      resultater = [];
     }
 
     return NextResponse.json({
-      identifisert: parsed,
+      identifisert,
       resultater,
+      brukteSokestreng,
+      alleSokestrenger: sokestrenger,
     });
   } catch (e: any) {
     console.error("AI-foto-feil:", e);
