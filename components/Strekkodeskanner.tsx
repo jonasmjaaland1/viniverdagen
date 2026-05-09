@@ -36,31 +36,40 @@ export default function Strekkodeskanner({
   const [feilmelding, setFeilmelding] = useState<string>("");
   const [manuellInput, setManuellInput] = useState("");
   const [visManuell, setVisManuell] = useState(false);
+  const [modus, setModus] = useState<"detector" | "qrcode" | null>(null);
 
   useEffect(() => {
     let aktiv = true;
 
     async function start() {
       try {
-        // Fall direkte tilbake til html5-qrcode hvis BarcodeDetector ikke er stabilt tilgjengelig
         const harBarcodeDetector =
-          typeof window !== "undefined" &&
-          "BarcodeDetector" in window &&
-          // BarcodeDetector er kun stabilt i Safari 16.4+ og Chrome (Android)
-          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+          typeof window !== "undefined" && "BarcodeDetector" in window;
 
         if (harBarcodeDetector) {
+          setModus("detector");
+          // Vent på at video-elementet rendres
+          await new Promise((r) => setTimeout(r, 200));
+          if (!aktiv) return;
           try {
             await startBarcodeDetector();
             return;
-          } catch (e) {
-            console.log(
-              "BarcodeDetector feilet, faller tilbake til html5-qrcode",
-            );
+          } catch (e: any) {
+            console.log("BarcodeDetector feilet:", e.message);
+            // Fall tilbake til html5-qrcode
+            if (streamRef.current) {
+              streamRef.current.getTracks().forEach((t) => t.stop());
+              streamRef.current = null;
+            }
+            setModus("qrcode");
           }
+        } else {
+          setModus("qrcode");
         }
 
-        // Fallback til html5-qrcode (fungerer overalt)
+        // Vent på at container rendres
+        await new Promise((r) => setTimeout(r, 200));
+        if (!aktiv) return;
         await lastHtml5Qrcode();
       } catch (e: any) {
         if (!aktiv) return;
@@ -101,7 +110,6 @@ export default function Strekkodeskanner({
 
       streamRef.current = stream;
 
-      await new Promise((r) => setTimeout(r, 100));
       const video = document.getElementById(
         "strekkode-video",
       ) as HTMLVideoElement;
@@ -128,7 +136,7 @@ export default function Strekkodeskanner({
             return;
           }
         } catch {
-          // Ignorer enkelt-feil og fortsett
+          // Ignorer
         }
         if (detectorAktiv.current) {
           requestAnimationFrame(skann);
@@ -338,12 +346,6 @@ export default function Strekkodeskanner({
     }
   }
 
-  // Detekt om vi bruker BarcodeDetector eller html5-qrcode
-  const brukerBarcodeDetector =
-    typeof window !== "undefined" &&
-    "BarcodeDetector" in window &&
-    /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
   return (
     <div className="fixed inset-0 z-50 bg-ink-900/95 flex flex-col">
       <div className="p-4 flex items-center justify-between border-b border-cream-50/10 bg-ink-900">
@@ -361,81 +363,97 @@ export default function Strekkodeskanner({
           <p className="text-cream-50/80 italic">Starter kamera …</p>
         )}
 
-        {(status === "skanner" || status === "sokerOpp") && (
-          <div className="w-full max-w-md">
-            <div
-              className="relative"
+        {/* Begge containere ALLTID i DOM, men skjul den vi ikke bruker */}
+        <div
+          className="w-full max-w-md"
+          style={{
+            display:
+              status === "skanner" ||
+              status === "sokerOpp" ||
+              status === "laster"
+                ? "block"
+                : "none",
+          }}
+        >
+          <div
+            className="relative"
+            style={{
+              background: "#000",
+              borderRadius: "4px",
+              overflow: "hidden",
+            }}
+          >
+            {/* BarcodeDetector video - alltid i DOM */}
+            <video
+              id="strekkode-video"
+              playsInline
+              muted
               style={{
-                background: "#000",
-                borderRadius: "4px",
-                overflow: "hidden",
+                width: "100%",
+                height: "auto",
+                maxHeight: "60vh",
+                display: modus === "detector" ? "block" : "none",
+                objectFit: "cover",
               }}
-            >
-              {/* BarcodeDetector video */}
-              {brukerBarcodeDetector ? (
-                <video
-                  id="strekkode-video"
-                  playsInline
-                  muted
-                  style={{
-                    width: "100%",
-                    height: "auto",
-                    maxHeight: "60vh",
-                    display: "block",
-                    objectFit: "cover",
-                  }}
-                />
-              ) : (
+            />
+
+            {/* html5-qrcode container - alltid i DOM */}
+            <div
+              id="strekkode-skanner-container"
+              style={{
+                width: "100%",
+                minHeight: modus === "qrcode" ? "300px" : "0",
+                display: modus === "qrcode" ? "block" : "none",
+                background: "#000",
+                overflow: "hidden",
+                position: "relative",
+              }}
+            />
+
+            {(status === "skanner" || status === "sokerOpp") && (
+              <>
                 <div
-                  id="strekkode-skanner-container"
+                  className="absolute pointer-events-none"
                   style={{
-                    width: "100%",
-                    minHeight: "300px",
-                    background: "#000",
-                    overflow: "hidden",
-                    position: "relative",
+                    top: "30%",
+                    left: "10%",
+                    right: "10%",
+                    bottom: "30%",
+                    border: "2px solid rgba(125, 44, 58, 0.9)",
+                    borderRadius: "8px",
                   }}
                 />
-              )}
-
-              {/* Sikte-rektangel */}
-              <div
-                className="absolute pointer-events-none"
-                style={{
-                  top: "30%",
-                  left: "10%",
-                  right: "10%",
-                  bottom: "30%",
-                  border: "2px solid rgba(125, 44, 58, 0.9)",
-                  borderRadius: "8px",
-                }}
-              />
-              <div
-                className="absolute left-[12%] right-[12%] h-0.5 bg-wine-700 pointer-events-none"
-                style={{
-                  top: "50%",
-                  animation: "skannLinje 1.5s ease-in-out infinite alternate",
-                  boxShadow: "0 0 8px rgba(125, 44, 58, 0.8)",
-                }}
-              />
-            </div>
-
-            <p className="text-cream-50/80 text-center mt-4 italic text-sm">
-              {status === "sokerOpp"
-                ? "Søker opp vinen …"
-                : "Hold strekkoden innenfor ruten"}
-            </p>
-
-            <div className="text-center mt-4">
-              <button
-                onClick={() => setVisManuell(true)}
-                className="text-xs text-cream-50/70 underline"
-              >
-                Fungerer ikke? Skriv inn varenummer eller strekkode manuelt
-              </button>
-            </div>
+                <div
+                  className="absolute left-[12%] right-[12%] h-0.5 bg-wine-700 pointer-events-none"
+                  style={{
+                    top: "50%",
+                    animation: "skannLinje 1.5s ease-in-out infinite alternate",
+                    boxShadow: "0 0 8px rgba(125, 44, 58, 0.8)",
+                  }}
+                />
+              </>
+            )}
           </div>
-        )}
+
+          {(status === "skanner" || status === "sokerOpp") && (
+            <>
+              <p className="text-cream-50/80 text-center mt-4 italic text-sm">
+                {status === "sokerOpp"
+                  ? "Søker opp vinen …"
+                  : "Hold strekkoden innenfor ruten"}
+              </p>
+
+              <div className="text-center mt-4">
+                <button
+                  onClick={() => setVisManuell(true)}
+                  className="text-xs text-cream-50/70 underline"
+                >
+                  Fungerer ikke? Skriv inn varenummer eller strekkode manuelt
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         {visManuell && status === "skanner" && (
           <div className="absolute inset-0 bg-ink-900/95 flex items-center justify-center p-4 z-10">
@@ -497,6 +515,13 @@ export default function Strekkodeskanner({
               Noe gikk galt
             </p>
             <p className="text-cream-50/70 mb-6">{feilmelding}</p>
+            <button
+              onClick={() => setVisManuell(true)}
+              className="btn-secondary text-sm mb-3"
+            >
+              Skriv inn manuelt
+            </button>
+            <br />
             <button onClick={lukkSkanner} className="btn-primary">
               Lukk
             </button>
