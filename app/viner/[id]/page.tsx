@@ -6,6 +6,7 @@ import DelPaWhatsApp from '@/components/DelPaWhatsApp';
 import SlettVinKnapp from '@/components/SlettVinKnapp';
 import MineVinerKnapp from '@/components/MineVinerKnapp';
 import VinAktivitet from '@/components/VinAktivitet';
+import PrivatNotat from '@/components/PrivatNotat';
 
 export default async function VinDetaljSide({
   params,
@@ -85,6 +86,10 @@ export default async function VinDetaljSide({
         </div>
       </article>
 
+      {/* Privat notat - kun synlig for innlogget bruker */}
+      <PrivatNotat varenummer={id} brukerId={user.id} />
+
+      {/* Klubbens aktivitet */}
       <VinAktivitet varenummer={id} />
 
       <section>
