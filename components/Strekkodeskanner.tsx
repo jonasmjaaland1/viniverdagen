@@ -34,13 +34,11 @@ export default function Strekkodeskanner({
 
     async function start() {
       try {
-        // Importer ZXing dynamisk
         const { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } =
           await import("@zxing/library");
 
         if (!aktiv) return;
 
-        // Konfigurer hva vi skal lese - primært vinflaske-strekkoder
         const hints = new Map();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.EAN_13,
@@ -55,7 +53,6 @@ export default function Strekkodeskanner({
         const codeReader = new BrowserMultiFormatReader(hints);
         codeReaderRef.current = codeReader;
 
-        // Få tilgang til bakkamera
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
@@ -72,7 +69,6 @@ export default function Strekkodeskanner({
 
         streamRef.current = stream;
 
-        // Vent på at video-elementet er rendret
         await new Promise((r) => setTimeout(r, 100));
         if (!aktiv) return;
 
@@ -90,16 +86,14 @@ export default function Strekkodeskanner({
 
         setStatus("skanner");
 
-        // Start kontinuerlig skanning
         codeReader.decodeFromVideoDevice(
-          undefined,
+          null,
           video,
           (result: any, err: any) => {
             if (result && aktiv) {
               const kode = result.getText();
               handleSkanning(kode);
             }
-            // Ignorer 'NotFoundException' - det betyr bare ingen kode i bildet ennå
           },
         );
       } catch (e: any) {
@@ -121,7 +115,6 @@ export default function Strekkodeskanner({
     }
 
     async function handleSkanning(kode: string) {
-      // Stopp skanner
       if (codeReaderRef.current) {
         try {
           codeReaderRef.current.reset();
