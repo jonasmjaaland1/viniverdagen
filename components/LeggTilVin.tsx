@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase-browser';
 import DelPaWhatsApp from './DelPaWhatsApp';
-import Strekkodeskanner from './Strekkodeskanner';
+import FotoAvEtikett from './FotoAvEtikett';
 
 interface Produkt {
   varenummer: string;
@@ -34,9 +34,9 @@ export default function LeggTilVin({
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
   const [nyligLagtTil, setNyligLagtTil] = useState<Produkt | null>(null);
-  const [skannerApen, setSkannerApen] = useState(false);
   const [score, setScore] = useState<number | null>(null);
   const [kommentar, setKommentar] = useState('');
+  const [visFotoAvEtikett, setVisFotoAvEtikett] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -80,10 +80,14 @@ export default function LeggTilVin({
     }
   }
 
+  function fotoTreff(produkt: Produkt) {
+    setVisFotoAvEtikett(false);
+    velgVin(produkt);
+  }
+
   async function leggTil() {
     if (!valgt) return;
 
-    // Obligatorisk validering
     if (!score) {
       setFeil('Du må gi en karakter (1-10).');
       return;
@@ -103,7 +107,6 @@ export default function LeggTilVin({
       return;
     }
 
-    // Steg 1: Sørg for at vinen er lagret i vinmonopol_produkter
     try {
       const lagreRes = await fetch('/api/vinmonopolet/lagre', {
         method: 'POST',
@@ -122,7 +125,6 @@ export default function LeggTilVin({
       return;
     }
 
-    // Steg 2: For frittstående viner - sjekk om det allerede finnes en
     if (!klubbkveldId) {
       const { data: eksisterende } = await supabase
         .from('smakinger')
@@ -142,7 +144,6 @@ export default function LeggTilVin({
       }
     }
 
-    // Steg 3: Opprett smakingen
     const { data: smaking, error } = await supabase
       .from('smakinger')
       .insert({
@@ -163,7 +164,6 @@ export default function LeggTilVin({
       return;
     }
 
-    // Steg 4: Lagre score og kommentar
     if (smaking) {
       await supabase.from('scorer').insert({
         smaking_id: smaking.id,
@@ -193,22 +193,6 @@ export default function LeggTilVin({
       router.refresh();
     }
     setLaster(false);
-  }
-
-  function handleSkannet(produkt: Produkt) {
-    setValgt(produkt);
-    setSkannerApen(false);
-    setSok('');
-    setResultater([]);
-  }
-
-  if (skannerApen) {
-    return (
-      <Strekkodeskanner
-        onTreff={handleSkannet}
-        onLukk={() => setSkannerApen(false)}
-      />
-    );
   }
 
   if (nyligLagtTil) {
@@ -251,194 +235,203 @@ export default function LeggTilVin({
 
   if (!apen && klubbkveldId) {
     return (
-      <div className="flex flex-wrap gap-3">
-        <button onClick={() => setApen(true)} className="btn-primary">
-          + Legg til vin
-        </button>
-        <button onClick={() => setSkannerApen(true)} className="btn-secondary">
-          📷 Skann strekkode
-        </button>
-      </div>
+      <button onClick={() => setApen(true)} className="btn-primary">
+        + Legg til vin
+      </button>
     );
   }
 
   return (
-    <div className="kort p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-xl text-wine-900">
-          {klubbkveldId ? 'Legg til vin på kvelden' : 'Legg til en vin'}
-        </h3>
-        {klubbkveldId && (
-          <button
-            onClick={() => {
-              setApen(false);
-              setValgt(null);
-              setSok('');
-              setFeil(null);
-              setScore(null);
-              setKommentar('');
-            }}
-            className="text-ink-700/50 hover:text-wine-700 text-sm font-sans"
-          >
-            Avbryt
-          </button>
-        )}
-      </div>
+    <>
+      {visFotoAvEtikett && (
+        <FotoAvEtikett
+          onTreff={fotoTreff}
+          onLukk={() => setVisFotoAvEtikett(false)}
+        />
+      )}
 
-      {!valgt ? (
-        <>
-          <div>
-            <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-1.5">
-              Søk etter navn eller varenummer
-            </label>
-            <input
-              type="text"
-              value={sok}
-              onChange={(e) => setSok(e.target.value)}
-              className="input-field"
-              placeholder="f.eks. Barolo eller 1234567"
-              autoFocus
-            />
-          </div>
-
-          <div className="flex justify-center">
-            <button
-              onClick={() => setSkannerApen(true)}
-              className="btn-secondary text-xs flex items-center gap-2"
-            >
-              📷 Eller skann strekkode
-            </button>
-          </div>
-
-          {laster && <p className="text-sm text-ink-700/60 italic">Søker …</p>}
-
-          {resultater.length > 0 && (
-            <ul className="divide-y divide-wine-900/10 max-h-96 overflow-y-auto">
-              {resultater.map((p) => (
-                <li key={p.varenummer}>
-                  <button
-                    onClick={() => velgVin(p)}
-                    className="w-full text-left p-3 hover:bg-cream-100 flex gap-3 items-center transition"
-                  >
-                    {p.bilde_url && (
-                      <img src={p.bilde_url} alt="" className="w-10 h-14 object-contain" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-display text-base text-wine-900 truncate">{p.navn}</p>
-                      <p className="text-xs font-sans text-ink-700/60">
-                        {[p.hovedkategori, p.land, p.varenummer].filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    {p.pris && (
-                      <p className="text-sm text-wine-700 font-display">
-                        {p.pris.toFixed(0)} kr
-                      </p>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {sok.length >= 2 && !laster && resultater.length === 0 && (
-            <p className="text-sm text-ink-700/60 italic">
-              Ingen treff. Prøv et annet søk eller skann strekkoden.
-            </p>
-          )}
-        </>
-      ) : (
-        <div className="space-y-5">
-          <div className="flex gap-4">
-            {valgt.bilde_url && (
-              <img src={valgt.bilde_url} alt="" className="w-20 h-28 object-contain" />
-            )}
-            <div className="flex-1">
-              <h4 className="font-display text-lg text-wine-900">{valgt.navn}</h4>
-              {henterDetaljer ? (
-                <p className="text-sm font-sans text-ink-700/60 italic mt-1">
-                  Henter detaljer …
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm font-sans text-ink-700/60 mt-1">
-                    {[valgt.hovedkategori, valgt.land, valgt.produsent].filter(Boolean).join(' · ')}
-                  </p>
-                  {valgt.pris && (
-                    <p className="text-sm text-wine-700 font-display mt-1">
-                      {valgt.pris.toFixed(2)} kr
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Karakter */}
-          <div className="pt-4 border-t border-wine-900/10">
-            <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
-              Din karakter <span className="text-wine-700">*</span>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setScore(n)}
-                  className={`w-10 h-10 rounded-full font-display text-lg transition ${
-                    score === n
-                      ? 'bg-wine-700 text-cream-50'
-                      : 'bg-cream-100 text-wine-800 hover:bg-cream-200'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Kommentar */}
-          <div>
-            <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
-              Din anmeldelse <span className="text-wine-700">*</span>
-            </label>
-            <textarea
-              value={kommentar}
-              onChange={(e) => setKommentar(e.target.value)}
-              placeholder="Hva synes du om vinen? Smaksopplevelse, hva den passer til, anbefaler du den …"
-              rows={3}
-              className="input-field resize-none"
-            />
-            <p className="text-xs text-ink-700/50 font-sans mt-1.5 italic">
-              Andre medlemmer kan komme med sine kommentarer og scorer i etterkant.
-            </p>
-          </div>
-
-          {feil && (
-            <p className="text-sm text-wine-700 bg-wine-50 px-3 py-2 rounded">{feil}</p>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={leggTil}
-              disabled={laster || henterDetaljer || !score || !kommentar.trim()}
-              className="btn-primary disabled:opacity-50"
-            >
-              {laster ? 'Legger til …' : 'Legg til vin'}
-            </button>
+      <div className="kort p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-xl text-wine-900">
+            {klubbkveldId ? 'Legg til vin på kvelden' : 'Legg til en vin'}
+          </h3>
+          {klubbkveldId && (
             <button
               onClick={() => {
+                setApen(false);
                 setValgt(null);
+                setSok('');
+                setFeil(null);
                 setScore(null);
                 setKommentar('');
-                setFeil(null);
               }}
-              className="btn-secondary"
+              className="text-ink-700/50 hover:text-wine-700 text-sm font-sans"
             >
-              Velg en annen
+              Avbryt
             </button>
-          </div>
+          )}
         </div>
-      )}
-    </div>
+
+        {!valgt ? (
+          <>
+            <div>
+              <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-1.5">
+                Søk etter navn eller varenummer
+              </label>
+              <input
+                type="text"
+                value={sok}
+                onChange={(e) => setSok(e.target.value)}
+                className="input-field"
+                placeholder="f.eks. Barolo eller 1234567"
+                autoFocus
+              />
+              <p className="text-xs text-ink-700/50 italic mt-1.5">
+                Tips: Du kan finne varenummer på Vinmonopolet.no eller på flasken
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-wine-900/10" />
+              <span className="text-xs font-sans uppercase tracking-wider text-ink-700/40">eller</span>
+              <div className="flex-1 h-px bg-wine-900/10" />
+            </div>
+
+            <button
+              onClick={() => setVisFotoAvEtikett(true)}
+              className="w-full py-3 px-4 bg-cream-100 hover:bg-cream-200 text-wine-800 font-display rounded-lg transition flex items-center justify-center gap-2 border border-wine-900/10"
+            >
+              📷 Ta bilde av etiketten
+            </button>
+
+            {laster && <p className="text-sm text-ink-700/60 italic">Søker …</p>}
+
+            {resultater.length > 0 && (
+              <ul className="divide-y divide-wine-900/10 max-h-96 overflow-y-auto">
+                {resultater.map((p) => (
+                  <li key={p.varenummer}>
+                    <button
+                      onClick={() => velgVin(p)}
+                      className="w-full text-left p-3 hover:bg-cream-100 flex gap-3 items-center transition"
+                    >
+                      {p.bilde_url && (
+                        <img src={p.bilde_url} alt="" className="w-10 h-14 object-contain" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-display text-base text-wine-900 truncate">{p.navn}</p>
+                        <p className="text-xs font-sans text-ink-700/60">
+                          {[p.hovedkategori, p.land, p.varenummer].filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                      {p.pris && (
+                        <p className="text-sm text-wine-700 font-display">
+                          {p.pris.toFixed(0)} kr
+                        </p>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {sok.length >= 2 && !laster && resultater.length === 0 && (
+              <p className="text-sm text-ink-700/60 italic">
+                Ingen treff. Prøv et annet søk.
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="space-y-5">
+            <div className="flex gap-4">
+              {valgt.bilde_url && (
+                <img src={valgt.bilde_url} alt="" className="w-20 h-28 object-contain" />
+              )}
+              <div className="flex-1">
+                <h4 className="font-display text-lg text-wine-900">{valgt.navn}</h4>
+                {henterDetaljer ? (
+                  <p className="text-sm font-sans text-ink-700/60 italic mt-1">
+                    Henter detaljer …
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm font-sans text-ink-700/60 mt-1">
+                      {[valgt.hovedkategori, valgt.land, valgt.produsent].filter(Boolean).join(' · ')}
+                    </p>
+                    {valgt.pris && (
+                      <p className="text-sm text-wine-700 font-display mt-1">
+                        {valgt.pris.toFixed(2)} kr
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-wine-900/10">
+              <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
+                Din karakter <span className="text-wine-700">*</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setScore(n)}
+                    className={`w-10 h-10 rounded-full font-display text-lg transition ${
+                      score === n
+                        ? 'bg-wine-700 text-cream-50'
+                        : 'bg-cream-100 text-wine-800 hover:bg-cream-200'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
+                Din anmeldelse <span className="text-wine-700">*</span>
+              </label>
+              <textarea
+                value={kommentar}
+                onChange={(e) => setKommentar(e.target.value)}
+                placeholder="Hva synes du om vinen? Smaksopplevelse, hva den passer til, anbefaler du den …"
+                rows={3}
+                className="input-field resize-none"
+              />
+              <p className="text-xs text-ink-700/50 font-sans mt-1.5 italic">
+                Andre medlemmer kan komme med sine kommentarer og scorer i etterkant.
+              </p>
+            </div>
+
+            {feil && (
+              <p className="text-sm text-wine-700 bg-wine-50 px-3 py-2 rounded">{feil}</p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={leggTil}
+                disabled={laster || henterDetaljer || !score || !kommentar.trim()}
+                className="btn-primary disabled:opacity-50"
+              >
+                {laster ? 'Legger til …' : 'Legg til vin'}
+              </button>
+              <button
+                onClick={() => {
+                  setValgt(null);
+                  setScore(null);
+                  setKommentar('');
+                  setFeil(null);
+                }}
+                className="btn-secondary"
+              >
+                Velg en annen
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
