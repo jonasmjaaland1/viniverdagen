@@ -91,13 +91,17 @@ export default function Strekkodeskanner({
         setStatus("skanner");
 
         // Start kontinuerlig skanning
-        codeReader.decodeFromVideoElement(video, (result: any, err: any) => {
-          if (result && aktiv) {
-            const kode = result.getText();
-            handleSkanning(kode);
-          }
-          // Ignorer 'NotFoundException' - det betyr bare ingen kode i bildet ennå
-        });
+        codeReader.decodeFromVideoDevice(
+          undefined,
+          video,
+          (result: any, err: any) => {
+            if (result && aktiv) {
+              const kode = result.getText();
+              handleSkanning(kode);
+            }
+            // Ignorer 'NotFoundException' - det betyr bare ingen kode i bildet ennå
+          },
+        );
       } catch (e: any) {
         if (!aktiv) return;
         setStatus("feil");
