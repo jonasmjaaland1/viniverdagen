@@ -1,65 +1,69 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase-browser';
-import Avatar from './Avatar';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase-browser";
+import Avatar from "./Avatar";
 
 export default function SmakingsKort({
   smaking,
   brukerId,
   visVin = true,
   kanScoreOgKommentere = true,
+  erAdmin = false,
 }: {
   smaking: any;
   brukerId: string;
   visVin?: boolean;
   kanScoreOgKommentere?: boolean;
+  erAdmin?: boolean;
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [score, setScore] = useState<number | null>(null);
-  const [kommentar, setKommentar] = useState('');
+  const [kommentar, setKommentar] = useState("");
   const [laster, setLaster] = useState(false);
+  const [redigererId, setRedigererId] = useState<string | null>(null);
+  const [redigertTekst, setRedigertTekst] = useState("");
 
   const v = smaking.vinmonopol_produkter;
   const scorer = smaking.scorer || [];
   const kommentarer = smaking.kommentarer || [];
   const minScore = scorer.find((s: any) => s.medlem_id === brukerId);
-  const snitt = scorer.length > 0
-    ? (scorer.reduce((a: number, b: any) => a + b.score, 0) / scorer.length).toFixed(1)
-    : null;
+  const snitt =
+    scorer.length > 0
+      ? (
+          scorer.reduce((a: number, b: any) => a + b.score, 0) / scorer.length
+        ).toFixed(1)
+      : null;
   const erFrittstaende = !smaking.klubbkveld_id;
   const tattMedAvId = smaking.tatt_med_av;
 
-  // Finn hovedanmelder (den som la til vinen) sin kommentar og score
   const hovedanmelderKommentar = kommentarer.find(
-    (k: any) => k.medlem_id === tattMedAvId
+    (k: any) => k.medlem_id === tattMedAvId,
   );
   const hovedanmelderScore = scorer.find(
-    (s: any) => s.medlem_id === tattMedAvId
+    (s: any) => s.medlem_id === tattMedAvId,
   );
 
-  // Andre kommentarer (fra andre enn hovedanmelder)
   const andreKommentarer = kommentarer.filter(
-    (k: any) => k.medlem_id !== tattMedAvId
+    (k: any) => k.medlem_id !== tattMedAvId,
   );
 
-  // Sortér eldste først så det leses kronologisk
-  const andreKommentarerSortert = [...andreKommentarer].sort((a, b) =>
-    new Date(a.opprettet_at).getTime() - new Date(b.opprettet_at).getTime()
+  const andreKommentarerSortert = [...andreKommentarer].sort(
+    (a, b) =>
+      new Date(a.opprettet_at).getTime() - new Date(b.opprettet_at).getTime(),
   );
 
-  // Andre scorer (fra andre enn hovedanmelder)
   const andreScorer = scorer.filter((s: any) => s.medlem_id !== tattMedAvId);
 
-  const tattMedAvNavn = smaking.medlemmer?.navn || 'Ukjent';
+  const tattMedAvNavn = smaking.medlemmer?.navn || "Ukjent";
 
   async function lagreScore() {
     if (!score) return;
     setLaster(true);
-    const { error } = await supabase.from('scorer').insert({
+    const { error } = await supabase.from("scorer").insert({
       smaking_id: smaking.id,
       medlem_id: brukerId,
       score,
@@ -74,14 +78,52 @@ export default function SmakingsKort({
   async function lagreKommentar() {
     if (!kommentar.trim()) return;
     setLaster(true);
-    const { error } = await supabase.from('kommentarer').insert({
+    const { error } = await supabase.from("kommentarer").insert({
       smaking_id: smaking.id,
       medlem_id: brukerId,
       tekst: kommentar.trim(),
     });
     setLaster(false);
     if (!error) {
-      setKommentar('');
+      setKommentar("");
+      router.refresh();
+    }
+  }
+
+  function startRediger(k: any) {
+    setRedigererId(k.id);
+    setRedigertTekst(k.tekst);
+  }
+
+  function avbrytRediger() {
+    setRedigererId(null);
+    setRedigertTekst("");
+  }
+
+  async function lagreRediger(kommentarId: string) {
+    if (!redigertTekst.trim()) return;
+    setLaster(true);
+    const { error } = await supabase
+      .from("kommentarer")
+      .update({ tekst: redigertTekst.trim() })
+      .eq("id", kommentarId);
+    setLaster(false);
+    if (!error) {
+      setRedigererId(null);
+      setRedigertTekst("");
+      router.refresh();
+    }
+  }
+
+  async function slettKommentar(kommentarId: string) {
+    if (!confirm("Slette denne kommentaren?")) return;
+    setLaster(true);
+    const { error } = await supabase
+      .from("kommentarer")
+      .delete()
+      .eq("id", kommentarId);
+    setLaster(false);
+    if (!error) {
       router.refresh();
     }
   }
@@ -90,8 +132,15 @@ export default function SmakingsKort({
     <article id={`smaking-${smaking.id}`} className="kort p-6 md:p-8">
       <div className="flex flex-col sm:flex-row gap-6">
         {visVin && v?.bilde_url && (
-          <Link href={`/viner/${smaking.varenummer}`} className="flex-shrink-0 mx-auto sm:mx-0">
-            <img src={v.bilde_url} alt={v.navn} className="w-24 h-36 object-contain" />
+          <Link
+            href={`/viner/${smaking.varenummer}`}
+            className="flex-shrink-0 mx-auto sm:mx-0"
+          >
+            <img
+              src={v.bilde_url}
+              alt={v.navn}
+              className="w-24 h-36 object-contain"
+            />
           </Link>
         )}
 
@@ -99,13 +148,20 @@ export default function SmakingsKort({
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               {visVin && (
-                <Link href={`/viner/${smaking.varenummer}`} className="hover:underline">
-                  <h3 className="font-display text-2xl text-wine-900">{v?.navn}</h3>
+                <Link
+                  href={`/viner/${smaking.varenummer}`}
+                  className="hover:underline"
+                >
+                  <h3 className="font-display text-2xl text-wine-900">
+                    {v?.navn}
+                  </h3>
                 </Link>
               )}
               {visVin && (
                 <p className="text-sm font-sans text-ink-700/60 mt-1">
-                  {[v?.hovedkategori, v?.land, v?.produsent].filter(Boolean).join(' · ')}
+                  {[v?.hovedkategori, v?.land, v?.produsent]
+                    .filter(Boolean)
+                    .join(" · ")}
                   {v?.alkoholprosent && ` · ${v.alkoholprosent}%`}
                 </p>
               )}
@@ -119,13 +175,12 @@ export default function SmakingsKort({
               <div className="text-right">
                 <p className="font-display text-3xl text-wine-800">★ {snitt}</p>
                 <p className="text-xs font-sans text-ink-700/50">
-                  {scorer.length} {scorer.length === 1 ? 'score' : 'scorer'}
+                  {scorer.length} {scorer.length === 1 ? "score" : "scorer"}
                 </p>
               </div>
             )}
           </div>
 
-          {/* HOVEDANMELDELSE - uthevet ramme med stor avatar */}
           <div className="mt-5 p-5 bg-cream-100/50 border-l-4 border-wine-700 rounded">
             <div className="flex items-start gap-4">
               <Avatar navn={tattMedAvNavn} storrelse="stor" />
@@ -134,7 +189,7 @@ export default function SmakingsKort({
                   <p className="font-display text-lg text-wine-900">
                     {tattMedAvNavn}
                     <span className="ml-2 text-xs uppercase tracking-wider font-sans text-wine-700">
-                      {erFrittstaende ? 'la til' : 'tok med'}
+                      {erFrittstaende ? "la til" : "tok med"}
                     </span>
                   </p>
                   {hovedanmelderScore && (
@@ -143,10 +198,66 @@ export default function SmakingsKort({
                     </span>
                   )}
                 </div>
+
                 {hovedanmelderKommentar ? (
-                  <p className="text-base font-sans text-ink-700/85 leading-relaxed mt-2 italic">
-                    "{hovedanmelderKommentar.tekst}"
-                  </p>
+                  redigererId === hovedanmelderKommentar.id ? (
+                    <div className="mt-2">
+                      <textarea
+                        value={redigertTekst}
+                        onChange={(e) => setRedigertTekst(e.target.value)}
+                        rows={3}
+                        className="input-field resize-none"
+                        autoFocus
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() =>
+                            lagreRediger(hovedanmelderKommentar.id)
+                          }
+                          disabled={laster || !redigertTekst.trim()}
+                          className="btn-primary text-xs disabled:opacity-50"
+                        >
+                          Lagre
+                        </button>
+                        <button
+                          onClick={avbrytRediger}
+                          disabled={laster}
+                          className="btn-secondary text-xs"
+                        >
+                          Avbryt
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2">
+                      <p className="text-base font-sans text-ink-700/85 leading-relaxed italic">
+                        "{hovedanmelderKommentar.tekst}"
+                      </p>
+                      {(hovedanmelderKommentar.medlem_id === brukerId ||
+                        erAdmin) && (
+                        <div className="flex gap-3 mt-2">
+                          {hovedanmelderKommentar.medlem_id === brukerId && (
+                            <button
+                              onClick={() =>
+                                startRediger(hovedanmelderKommentar)
+                              }
+                              className="text-xs font-sans uppercase tracking-wider text-ink-700/60 hover:text-wine-700 transition"
+                            >
+                              Rediger
+                            </button>
+                          )}
+                          <button
+                            onClick={() =>
+                              slettKommentar(hovedanmelderKommentar.id)
+                            }
+                            className="text-xs font-sans uppercase tracking-wider text-ink-700/60 hover:text-wine-700 transition"
+                          >
+                            Slett
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
                 ) : (
                   <p className="text-sm font-sans text-ink-700/50 italic mt-2">
                     (Ingen anmeldelse)
@@ -156,7 +267,6 @@ export default function SmakingsKort({
             </div>
           </div>
 
-          {/* Andre scorer (compactly) */}
           {andreScorer.length > 0 && (
             <div className="mt-5">
               <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-2">
@@ -168,14 +278,14 @@ export default function SmakingsKort({
                     key={s.id}
                     className="text-xs font-sans px-3 py-1 bg-cream-100 rounded-full"
                   >
-                    {s.medlemmer?.navn}: <span className="font-medium text-wine-700">{s.score}</span>
+                    {s.medlemmer?.navn}:{" "}
+                    <span className="font-medium text-wine-700">{s.score}</span>
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Andre kommentarer */}
           {andreKommentarerSortert.length > 0 && (
             <div className="mt-5">
               <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-3">
@@ -186,12 +296,65 @@ export default function SmakingsKort({
                   <li key={k.id} className="flex gap-3 items-start">
                     <Avatar navn={k.medlemmer?.navn} storrelse="liten" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-sans text-ink-700/85 leading-relaxed">
-                        {k.tekst}
-                      </p>
-                      <p className="text-xs font-sans text-ink-700/50 mt-1">
-                        {k.medlemmer?.navn} · {new Date(k.opprettet_at).toLocaleDateString('nb-NO')}
-                      </p>
+                      {redigererId === k.id ? (
+                        <div>
+                          <textarea
+                            value={redigertTekst}
+                            onChange={(e) => setRedigertTekst(e.target.value)}
+                            rows={3}
+                            className="input-field resize-none"
+                            autoFocus
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => lagreRediger(k.id)}
+                              disabled={laster || !redigertTekst.trim()}
+                              className="btn-primary text-xs disabled:opacity-50"
+                            >
+                              Lagre
+                            </button>
+                            <button
+                              onClick={avbrytRediger}
+                              disabled={laster}
+                              className="btn-secondary text-xs"
+                            >
+                              Avbryt
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-sans text-ink-700/85 leading-relaxed">
+                            {k.tekst}
+                          </p>
+                          <div className="flex items-center gap-3 mt-1 flex-wrap">
+                            <p className="text-xs font-sans text-ink-700/50">
+                              {k.medlemmer?.navn} ·{" "}
+                              {new Date(k.opprettet_at).toLocaleDateString(
+                                "nb-NO",
+                              )}
+                            </p>
+                            {(k.medlem_id === brukerId || erAdmin) && (
+                              <div className="flex gap-2">
+                                {k.medlem_id === brukerId && (
+                                  <button
+                                    onClick={() => startRediger(k)}
+                                    className="text-xs font-sans uppercase tracking-wider text-ink-700/60 hover:text-wine-700 transition"
+                                  >
+                                    Rediger
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => slettKommentar(k.id)}
+                                  className="text-xs font-sans uppercase tracking-wider text-ink-700/60 hover:text-wine-700 transition"
+                                >
+                                  Slett
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -199,7 +362,6 @@ export default function SmakingsKort({
             </div>
           )}
 
-          {/* Egen score-input - bare hvis ikke allerede scoret */}
           {kanScoreOgKommentere && !minScore && (
             <div className="mt-6 pt-5 border-t border-wine-900/10">
               <p className="text-sm font-sans uppercase tracking-wider text-ink-700/60 mb-2">
@@ -212,8 +374,8 @@ export default function SmakingsKort({
                     onClick={() => setScore(n)}
                     className={`w-10 h-10 rounded-full font-display text-lg transition ${
                       score === n
-                        ? 'bg-wine-700 text-cream-50'
-                        : 'bg-cream-100 text-wine-800 hover:bg-cream-200'
+                        ? "bg-wine-700 text-cream-50"
+                        : "bg-cream-100 text-wine-800 hover:bg-cream-200"
                     }`}
                   >
                     {n}
@@ -235,11 +397,14 @@ export default function SmakingsKort({
 
           {kanScoreOgKommentere && minScore && (
             <p className="mt-5 text-sm font-sans text-ink-700/70">
-              Du ga denne <span className="text-wine-700 font-medium">{minScore.score}</span>.
+              Du ga denne{" "}
+              <span className="text-wine-700 font-medium">
+                {minScore.score}
+              </span>
+              .
             </p>
           )}
 
-          {/* Skriv kommentar */}
           {kanScoreOgKommentere && (
             <div className="mt-5 pt-5 border-t border-wine-900/10">
               <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-2">
