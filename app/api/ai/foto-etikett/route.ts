@@ -1,68 +1,73 @@
-import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import { NextRequest, NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const fil = formData.get('bilde') as File | null;
+    const fil = formData.get("bilde") as File | null;
 
     if (!fil) {
-      return NextResponse.json(
-        { feil: 'Bilde mangler' },
-        { status: 400 }
-      );
+      return NextResponse.json({ feil: "Bilde mangler" }, { status: 400 });
     }
 
     // Konverter bilde til base64
     const buffer = Buffer.from(await fil.arrayBuffer());
-    const base64 = buffer.toString('base64');
-    const mediaType = fil.type as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+    const base64 = buffer.toString("base64");
+    const mediaType = fil.type as
+      | "image/jpeg"
+      | "image/png"
+      | "image/webp"
+      | "image/gif";
 
-    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mediaType)) {
+    if (
+      !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(
+        mediaType,
+      )
+    ) {
       return NextResponse.json(
-        { feil: 'Bildet må være JPEG, PNG, WebP eller GIF' },
-        { status: 400 }
+        { feil: "Bildet må være JPEG, PNG, WebP eller GIF" },
+        { status: 400 },
       );
     }
 
     // Sjekk størrelse - max 5MB
     if (buffer.length > 5 * 1024 * 1024) {
       return NextResponse.json(
-        { feil: 'Bildet er for stort. Maks 5MB.' },
-        { status: 400 }
+        { feil: "Bildet er for stort. Maks 5MB." },
+        { status: 400 },
       );
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { feil: 'API-nøkkel mangler på serveren' },
-        { status: 500 }
+        { feil: "API-nøkkel mangler på serveren" },
+        { status: 500 },
       );
     }
 
     const anthropic = new Anthropic({ apiKey });
 
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: "claude-sonnet-4-6",
       max_tokens: 500,
       messages: [
         {
-          role: 'user',
+          role: "user",
           content: [
             {
-              type: 'image',
+              type: "image",
               source: {
-                type: 'base64',
+                type: "base64",
                 media_type: mediaType,
                 data: base64,
               },
             },
             {
-              type: 'text',
+              type: "text",
               text: `Du ser på bildet av en vinetikett. Identifiser vinen og returner KUN gyldig JSON med følgende struktur (ingen forklaring, ingen markdown):
 
 {
@@ -77,8 +82,8 @@ export async function POST(req: NextRequest) {
 
 Hvis du ikke ser en vinetikett tydelig, returner: {"feil": "Kunne ikke lese vinetiketten tydelig"}
 
-Eksempel sokestreng: 
-- "Antinori Tignanello" → "Tignanello"  
+Eksempel sokestreng:
+- "Antinori Tignanello" → "Tignanello"
 - "Domaine de la Romanée-Conti La Tâche" → "La Tâche"
 - "Château Margaux" → "Château Margaux"
 
@@ -90,36 +95,38 @@ Returner kun JSON, ingenting annet.`,
     });
 
     // Hent ut tekstinnholdet
-    const tekstinnhold = response.content.find((c: any) => c.type === 'text');
-    if (!tekstinnhold || tekstinnhold.type !== 'text') {
+    const tekstinnhold = response.content.find((c: any) => c.type === "text");
+    if (!tekstinnhold || tekstinnhold.type !== "text") {
       return NextResponse.json(
-        { feil: 'Klarte ikke å lese vinetiketten' },
-        { status: 500 }
+        { feil: "Klarte ikke å lese vinetiketten" },
+        { status: 500 },
       );
     }
 
     let parsed;
     try {
       // Fjern eventuelle markdown-fences hvis Claude la dem til
-      const renTekst = tekstinnhold.text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      const renTekst = tekstinnhold.text
+        .replace(/```json\s*/g, "")
+        .replace(/```\s*/g, "")
+        .trim();
       parsed = JSON.parse(renTekst);
     } catch (e) {
       return NextResponse.json(
-        { feil: 'Klarte ikke å tolke svaret fra AI', svar: tekstinnhold.text },
-        { status: 500 }
+        { feil: "Klarte ikke å tolke svaret fra AI", svar: tekstinnhold.text },
+        { status: 500 },
       );
     }
 
     if (parsed.feil) {
-      return NextResponse.json(
-        { feil: parsed.feil },
-        { status: 400 }
-      );
+      return NextResponse.json({ feil: parsed.feil }, { status: 400 });
     }
 
     // Søk opp i Vinmonopolet basert på sokestreng
     const baseUrl = req.nextUrl.origin;
-    const sokRes = await fetch(`${baseUrl}/api/vinmonopolet/sok?q=${encodeURIComponent(parsed.sokestreng || parsed.vinnavn || parsed.navn)}`);
+    const sokRes = await fetch(
+      `${baseUrl}/api/vinmonopolet/sok?q=${encodeURIComponent(parsed.sokestreng || parsed.vinnavn || parsed.navn)}`,
+    );
     const sokData = await sokRes.json();
 
     return NextResponse.json({
@@ -127,10 +134,10 @@ Returner kun JSON, ingenting annet.`,
       resultater: sokData.resultater || [],
     });
   } catch (e: any) {
-    console.error('AI-foto-feil:', e);
+    console.error("AI-foto-feil:", e);
     return NextResponse.json(
-      { feil: e.message || 'Noe gikk galt' },
-      { status: 500 }
+      { feil: e.message || "Noe gikk galt" },
+      { status: 500 },
     );
   }
 }
