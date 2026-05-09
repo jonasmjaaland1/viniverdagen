@@ -105,6 +105,7 @@ export default async function VinDetaljSide({
                 brukerId={user.id}
                 visVin={false}
                 kanScoreOgKommentere={!s.klubbkveld_id || medlem.er_klubbmedlem}
+                erAdmin={medlem.er_admin}
               />
             ))}
           </div>
