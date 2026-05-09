@@ -2,13 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-declare global {
-  interface Window {
-    Html5Qrcode: any;
-    BarcodeDetector: any;
-  }
-}
-
 interface SkanningResultat {
   varenummer: string;
   navn: string;
@@ -26,51 +19,85 @@ export default function Strekkodeskanner({
   onTreff: (produkt: SkanningResultat) => void;
   onLukk: () => void;
 }) {
-  const skannerRef = useRef<any>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const codeReaderRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectorAktiv = useRef(false);
   const [status, setStatus] = useState<
-    "laster" | "klar" | "skanner" | "sokerOpp" | "ingenTreff" | "feil"
+    "laster" | "skanner" | "sokerOpp" | "ingenTreff" | "feil"
   >("laster");
   const [feilmelding, setFeilmelding] = useState<string>("");
   const [manuellInput, setManuellInput] = useState("");
   const [visManuell, setVisManuell] = useState(false);
-  const [modus, setModus] = useState<"detector" | "qrcode" | null>(null);
 
   useEffect(() => {
     let aktiv = true;
 
     async function start() {
       try {
-        const harBarcodeDetector =
-          typeof window !== "undefined" && "BarcodeDetector" in window;
+        // Importer ZXing dynamisk
+        const { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType } =
+          await import("@zxing/library");
 
-        if (harBarcodeDetector) {
-          setModus("detector");
-          // Vent på at video-elementet rendres
-          await new Promise((r) => setTimeout(r, 200));
-          if (!aktiv) return;
-          try {
-            await startBarcodeDetector();
-            return;
-          } catch (e: any) {
-            console.log("BarcodeDetector feilet:", e.message);
-            // Fall tilbake til html5-qrcode
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach((t) => t.stop());
-              streamRef.current = null;
-            }
-            setModus("qrcode");
-          }
-        } else {
-          setModus("qrcode");
+        if (!aktiv) return;
+
+        // Konfigurer hva vi skal lese - primært vinflaske-strekkoder
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
+
+        const codeReader = new BrowserMultiFormatReader(hints);
+        codeReaderRef.current = codeReader;
+
+        // Få tilgang til bakkamera
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+
+        if (!aktiv) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
 
-        // Vent på at container rendres
-        await new Promise((r) => setTimeout(r, 200));
+        streamRef.current = stream;
+
+        // Vent på at video-elementet er rendret
+        await new Promise((r) => setTimeout(r, 100));
         if (!aktiv) return;
-        await lastHtml5Qrcode();
+
+        const video = document.getElementById(
+          "zxing-video",
+        ) as HTMLVideoElement;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          throw new Error("Kunne ikke finne video-element");
+        }
+
+        videoRef.current = video;
+        video.srcObject = stream;
+        await video.play();
+
+        setStatus("skanner");
+
+        // Start kontinuerlig skanning
+        codeReader.decodeFromVideoElement(video, (result: any, err: any) => {
+          if (result && aktiv) {
+            const kode = result.getText();
+            handleSkanning(kode);
+          }
+          // Ignorer 'NotFoundException' - det betyr bare ingen kode i bildet ennå
+        });
       } catch (e: any) {
         if (!aktiv) return;
         setStatus("feil");
@@ -89,155 +116,18 @@ export default function Strekkodeskanner({
       }
     }
 
-    async function startBarcodeDetector() {
-      const detector = new (window as any).BarcodeDetector({
-        formats: ["ean_13", "upc_a", "ean_8", "code_128", "code_39"],
-      });
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-        audio: false,
-      });
-
-      if (!aktiv) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-
-      streamRef.current = stream;
-
-      const video = document.getElementById(
-        "strekkode-video",
-      ) as HTMLVideoElement;
-      if (!video) {
-        stream.getTracks().forEach((t) => t.stop());
-        throw new Error("Kunne ikke finne video-element");
-      }
-
-      videoRef.current = video;
-      video.srcObject = stream;
-      await video.play();
-
-      setStatus("skanner");
-      detectorAktiv.current = true;
-
-      const skann = async () => {
-        if (!detectorAktiv.current || !videoRef.current) return;
-        try {
-          const koder = await detector.detect(videoRef.current);
-          if (koder.length > 0) {
-            const kode = koder[0].rawValue;
-            detectorAktiv.current = false;
-            await handleSkanning(kode);
-            return;
-          }
-        } catch {
-          // Ignorer
-        }
-        if (detectorAktiv.current) {
-          requestAnimationFrame(skann);
-        }
-      };
-      requestAnimationFrame(skann);
-    }
-
-    async function lastHtml5Qrcode() {
-      if (!window.Html5Qrcode) {
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src =
-            "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
-          script.onload = () => resolve();
-          script.onerror = () =>
-            reject(new Error("Kunne ikke laste skanner-biblioteket"));
-          document.head.appendChild(script);
-        });
-      }
-
-      if (!aktiv) return;
-
-      const Html5Qrcode = window.Html5Qrcode;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
-      const container = document.getElementById("strekkode-skanner-container");
-      if (!container) {
-        throw new Error("Kunne ikke finne skanner-container");
-      }
-
-      const skanner = new Html5Qrcode("strekkode-skanner-container");
-      skannerRef.current = skanner;
-
-      const config: any = {
-        fps: 30,
-        qrbox: { width: 280, height: 180 },
-        aspectRatio: 1.33,
-        videoConstraints: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-        },
-      };
-
-      let started = false;
-      try {
-        await skanner.start(
-          { facingMode: "environment" },
-          config,
-          handleSkanning,
-          () => {},
-        );
-        started = true;
-      } catch (e1) {
-        try {
-          const cameras = await Html5Qrcode.getCameras();
-          if (!cameras || cameras.length === 0) {
-            throw new Error("Fant ingen kamera på enheten.");
-          }
-          const bakkamera =
-            cameras.find((c: any) => /back|rear|environment/i.test(c.label)) ||
-            cameras[cameras.length - 1];
-          await skanner.start(bakkamera.id, config, handleSkanning, () => {});
-          started = true;
-        } catch (e2) {
-          throw e2;
-        }
-      }
-
-      if (started) {
-        setTimeout(() => {
-          const video = document.querySelector(
-            "#strekkode-skanner-container video",
-          ) as HTMLVideoElement;
-          if (video) {
-            video.style.width = "100%";
-            video.style.height = "auto";
-            video.style.maxHeight = "60vh";
-            video.style.display = "block";
-            video.style.objectFit = "cover";
-          }
-        }, 300);
-      }
-
-      setStatus("skanner");
-    }
-
     async function handleSkanning(kode: string) {
-      detectorAktiv.current = false;
+      // Stopp skanner
+      if (codeReaderRef.current) {
+        try {
+          codeReaderRef.current.reset();
+        } catch {}
+        codeReaderRef.current = null;
+      }
 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
-      }
-
-      if (skannerRef.current) {
-        try {
-          await skannerRef.current.stop();
-          skannerRef.current = null;
-        } catch {}
       }
 
       setStatus("sokerOpp");
@@ -273,31 +163,29 @@ export default function Strekkodeskanner({
 
     return () => {
       aktiv = false;
-      detectorAktiv.current = false;
+      if (codeReaderRef.current) {
+        try {
+          codeReaderRef.current.reset();
+        } catch {}
+        codeReaderRef.current = null;
+      }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
-      }
-      if (skannerRef.current) {
-        try {
-          skannerRef.current.stop().catch(() => {});
-        } catch {}
-        skannerRef.current = null;
       }
     };
   }, [onTreff]);
 
   async function lukkSkanner() {
-    detectorAktiv.current = false;
+    if (codeReaderRef.current) {
+      try {
+        codeReaderRef.current.reset();
+      } catch {}
+      codeReaderRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
-    }
-    if (skannerRef.current) {
-      try {
-        await skannerRef.current.stop();
-      } catch {}
-      skannerRef.current = null;
     }
     onLukk();
   }
@@ -363,7 +251,6 @@ export default function Strekkodeskanner({
           <p className="text-cream-50/80 italic">Starter kamera …</p>
         )}
 
-        {/* Begge containere ALLTID i DOM, men skjul den vi ikke bruker */}
         <div
           className="w-full max-w-md"
           style={{
@@ -383,30 +270,17 @@ export default function Strekkodeskanner({
               overflow: "hidden",
             }}
           >
-            {/* BarcodeDetector video - alltid i DOM */}
             <video
-              id="strekkode-video"
+              id="zxing-video"
               playsInline
               muted
+              autoPlay
               style={{
                 width: "100%",
                 height: "auto",
                 maxHeight: "60vh",
-                display: modus === "detector" ? "block" : "none",
+                display: "block",
                 objectFit: "cover",
-              }}
-            />
-
-            {/* html5-qrcode container - alltid i DOM */}
-            <div
-              id="strekkode-skanner-container"
-              style={{
-                width: "100%",
-                minHeight: modus === "qrcode" ? "300px" : "0",
-                display: modus === "qrcode" ? "block" : "none",
-                background: "#000",
-                overflow: "hidden",
-                position: "relative",
               }}
             />
 
@@ -455,7 +329,7 @@ export default function Strekkodeskanner({
           )}
         </div>
 
-        {visManuell && status === "skanner" && (
+        {visManuell && (
           <div className="absolute inset-0 bg-ink-900/95 flex items-center justify-center p-4 z-10">
             <div className="bg-cream-50 rounded-lg p-6 max-w-md w-full">
               <h3 className="font-display text-xl text-wine-900 mb-3">
@@ -503,6 +377,12 @@ export default function Strekkodeskanner({
               Strekkoden finnes ikke hos Vinmonopolet, eller produktet er ikke i
               deres database. Du kan prøve å søke på navn i stedet.
             </p>
+            <button
+              onClick={() => setVisManuell(true)}
+              className="btn-secondary text-sm mb-3 mr-2"
+            >
+              Prøv igjen manuelt
+            </button>
             <button onClick={lukkSkanner} className="btn-primary">
               Tilbake
             </button>
@@ -517,11 +397,10 @@ export default function Strekkodeskanner({
             <p className="text-cream-50/70 mb-6">{feilmelding}</p>
             <button
               onClick={() => setVisManuell(true)}
-              className="btn-secondary text-sm mb-3"
+              className="btn-secondary text-sm mb-3 mr-2"
             >
               Skriv inn manuelt
             </button>
-            <br />
             <button onClick={lukkSkanner} className="btn-primary">
               Lukk
             </button>
