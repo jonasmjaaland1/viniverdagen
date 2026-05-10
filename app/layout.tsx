@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Navigasjon from "@/components/Navigasjon";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import InstallerBanner from "@/components/InstallerBanner";
 import { createClient } from "@/lib/supabase-server";
 
 export const metadata: Metadata = {
@@ -57,6 +58,7 @@ export default async function RootLayout({
     <html lang="nb">
       <body>
         <ServiceWorkerRegister />
+        {medlem && <InstallerBanner />}
         {medlem && <Navigasjon medlem={medlem} />}
         <main className="min-h-screen">{children}</main>
         <footer className="mt-24 py-8 text-center text-sm text-ink-700/60 font-sans">
