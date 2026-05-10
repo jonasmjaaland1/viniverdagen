@@ -46,6 +46,7 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
     { href: "/viner", label: "Viner", ikon: "🍇" },
     { href: "/legg-til-vin", label: "Legg til vin", ikon: "➕" },
     { href: "/chat", label: "Chat", ikon: "💬", visUlest: true },
+    { href: "/sporr-claude", label: "Spør KI", ikon: "🤖" },
     { href: "/mine-viner", label: "Mine viner", ikon: "📦" },
     { href: "/statistikk", label: "Statistikk", ikon: "📊" },
     { href: "/innstillinger", label: "Innstillinger", ikon: "🔔" },
