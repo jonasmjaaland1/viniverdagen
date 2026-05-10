@@ -43,6 +43,7 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
   const menyLenker = [
     { href: "/", label: "Forside", ikon: "🏠" },
     { href: "/klubbkvelder", label: "Klubbkvelder", ikon: "🍷" },
+    { href: "/datoer", label: "Dato-forslag", ikon: "📅" },
     { href: "/viner", label: "Viner", ikon: "🍇" },
     { href: "/legg-til-vin", label: "Legg til vin", ikon: "➕" },
     { href: "/chat", label: "Chat", ikon: "💬", visUlest: true },
