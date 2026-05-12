@@ -1,37 +1,42 @@
-import { createClient } from '@/lib/supabase-server';
-import { redirect } from 'next/navigation';
-import AdminMedlemmer from '@/components/AdminMedlemmer';
-import AdminKlubbkvelder from '@/components/AdminKlubbkvelder';
+import { createClient } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
+import AdminMedlemmer from "@/components/AdminMedlemmer";
+import AdminKlubbkvelder from "@/components/AdminKlubbkvelder";
+import OppdaterAlleViner from "@/components/OppdaterAlleViner";
 
 export default async function AdminPanel() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   const { data: meg } = await supabase
-    .from('medlemmer')
-    .select('er_admin')
-    .eq('id', user.id)
+    .from("medlemmer")
+    .select("er_admin")
+    .eq("id", user.id)
     .single();
 
   if (!meg?.er_admin) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-20 text-center">
         <h1 className="font-display text-3xl text-wine-800">Ikke tilgang</h1>
-        <p className="text-ink-700/70 mt-3">Kun administratorer kan se denne siden.</p>
+        <p className="text-ink-700/70 mt-3">
+          Kun administratorer kan se denne siden.
+        </p>
       </div>
     );
   }
 
   const { data: medlemmer } = await supabase
-    .from('medlemmer')
-    .select('*')
-    .order('opprettet_at', { ascending: false });
+    .from("medlemmer")
+    .select("*")
+    .order("opprettet_at", { ascending: false });
 
   const { data: kvelder } = await supabase
-    .from('klubbkvelder')
-    .select('*')
-    .order('dato', { ascending: false });
+    .from("klubbkvelder")
+    .select("*")
+    .order("dato", { ascending: false });
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
@@ -45,9 +50,23 @@ export default async function AdminPanel() {
         <AdminMedlemmer medlemmer={medlemmer || []} />
       </section>
 
+      <section className="mb-16">
+        <h2 className="font-display text-3xl text-wine-900 mb-6">
+          Klubbkvelder
+        </h2>
+        <AdminKlubbkvelder
+          kvelder={kvelder || []}
+          medlemmer={medlemmer || []}
+        />
+      </section>
+
       <section>
-        <h2 className="font-display text-3xl text-wine-900 mb-6">Klubbkvelder</h2>
-        <AdminKlubbkvelder kvelder={kvelder || []} medlemmer={medlemmer || []} />
+        <h2 className="font-display text-3xl text-wine-900 mb-6">
+          Vin-database
+        </h2>
+        <div className="kort p-6">
+          <OppdaterAlleViner />
+        </div>
       </section>
     </div>
   );
