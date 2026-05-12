@@ -12,7 +12,6 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Prøv først navn-søk, så fritekst hvis tomt
     let treff = await sokProdukter(sok, 20);
     if (treff.length === 0) {
       treff = await fritekstSok(sok, 20);

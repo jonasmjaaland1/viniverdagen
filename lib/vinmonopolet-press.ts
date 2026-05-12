@@ -88,31 +88,20 @@ export interface PressProduct {
   }>;
 }
 
-/**
- * Hent ett produkt på varenummer
- */
 export async function hentProdukt(varenummer: string): Promise<PressProduct | null> {
   const data = await pressFetch(`/details-normal?productId=${encodeURIComponent(varenummer)}&maxResults=1`);
   return Array.isArray(data) && data.length > 0 ? data[0] : null;
 }
 
-/**
- * Søk etter produkter på (delvis) navn
- */
 export async function sokProdukter(sok: string, limit = 20): Promise<PressProduct[]> {
   const ren = sok.trim();
   if (!ren) return [];
-  // productShortNameContains er substring-søk på kortnavn
   const data = await pressFetch(
     `/details-normal?productShortNameContains=${encodeURIComponent(ren)}&maxResults=${limit}`
   );
   return Array.isArray(data) ? data : [];
 }
 
-/**
- * Fritekst-søk (bruker JSON-innhold)
- * NB: _ = mellomrom, * = wildcard
- */
 export async function fritekstSok(sok: string, limit = 20): Promise<PressProduct[]> {
   const ren = sok.trim().replace(/\s+/g, '_');
   if (!ren) return [];
@@ -122,16 +111,15 @@ export async function fritekstSok(sok: string, limit = 20): Promise<PressProduct
   return Array.isArray(data) ? data : [];
 }
 
-/**
- * Hent produkt på strekkode (GTIN/EAN)
- */
 export async function hentPaStrekkode(gtin: string): Promise<PressProduct | null> {
   const data = await pressFetch(`/details-normal?gtin=${encodeURIComponent(gtin)}&maxResults=1`);
   return Array.isArray(data) && data.length > 0 ? data[0] : null;
 }
 
 /**
- * Mapper Press API-data til vårt database-skjema
+ * Mapper Press API-data til vårt database-skjema.
+ * NB: druer og passer_til er TEXT[] (ARRAY) i databasen, ikke jsonb.
+ *     matparing er jsonb.
  */
 export function tilDatabase(p: PressProduct): Record<string, any> {
   const argang = p.basic.vintage ? String(p.basic.vintage) : null;
@@ -144,37 +132,54 @@ export function tilDatabase(p: PressProduct): Record<string, any> {
     return isNaN(n) ? null : n;
   }
 
+  // Druer som array av tekst: ["Pinot Nero 15%", "Glera 85%"]
+  const druerArray = (p.ingredients?.grapes || []).map((g) => {
+    const pct = g.grapePct ? ` ${g.grapePct}%` : '';
+    return `${g.grapeDesc}${pct}`;
+  });
+
+  // Mat-paring som array av tekst for passer_til: ["Aperitiff/avec", "Skalldyr", "Fisk"]
+  const passerTilArray = (p.description?.recommendedFood || []).map((f) => f.foodDesc);
+
+  // Mat-paring som jsonb beholder hele strukturen
+  const matparingJsonb = p.description?.recommendedFood || [];
+
+  const hovedkategori = p.classification?.mainProductTypeName || null;
+  const undertypeNavn = p.classification?.subProductTypeName || null;
+
   return {
     varenummer: p.basic.productId,
     navn: p.basic.productShortName,
     langt_navn: p.basic.productLongName,
+    volum: p.basic.volume,
     volum_liter: p.basic.volume,
     alkoholprosent: p.basic.alcoholContent,
     argang,
-    kork_type: p.basic.corkType,
-    embalasje: p.basic.packagingMaterial,
-    salg_status: p.basic.productStatusSaleName,
+    kork_type: p.basic.corkType || null,
+    embalasje: p.basic.packagingMaterial || null,
+    salg_status: p.basic.productStatusSaleName || null,
 
-    // Klassifisering
-    hovedkategori: p.classification?.mainProductTypeName,
-    hovedtype: p.classification?.mainProductTypeName,
-    undertype: p.classification?.subProductTypeName,
-    produktgruppe: p.classification?.productGroupName,
+    // Klassifisering - bruk eksisterende kolonner
+    hovedkategori,
+    produkttype: undertypeNavn,
+    hovedtype: hovedkategori,
+    undertype: undertypeNavn,
+    produktgruppe: p.classification?.productGroupName || null,
 
     // Opprinnelse
-    land: p.origins?.origin?.country,
-    distrikt: p.origins?.origin?.region,
-    underdistrikt: p.origins?.origin?.subRegion,
-    kvalitetsklassifisering: p.origins?.localQualityClassif,
+    land: p.origins?.origin?.country || null,
+    distrikt: p.origins?.origin?.region || null,
+    underdistrikt: p.origins?.origin?.subRegion || null,
+    kvalitetsklassifisering: p.origins?.localQualityClassif || null,
 
     // Logistikk
-    produsent: p.logistics?.manufacturerName,
-    grossist: p.logistics?.wholesalerName,
+    produsent: p.logistics?.manufacturerName || null,
+    grossist: p.logistics?.wholesalerName || null,
     hovedstrekkode: hovedStrekkode,
 
     // Egenskaper
-    eco_merking: p.properties?.ecoLabelling,
-    lagringspotensial: p.properties?.storagePotential,
+    eco_merking: p.properties?.ecoLabelling || null,
+    lagringspotensial: p.properties?.storagePotential || null,
     er_okologisk: p.properties?.organic || false,
     er_biodynamisk: p.properties?.biodynamic || false,
     er_etisk_sertifisert: p.properties?.ethicallyCertified || false,
@@ -182,13 +187,13 @@ export function tilDatabase(p: PressProduct): Record<string, any> {
     er_kosher: p.properties?.kosher || false,
     ingen_tilsatt_svovel: p.properties?.noAddedSulphur || false,
     er_sotvin: p.properties?.sweetWine || false,
-    produksjonsmetode: p.properties?.productionMethodStorage,
+    produksjonsmetode: p.properties?.productionMethodStorage || null,
 
     // Ingredienser
-    druer: p.ingredients?.grapes || [],
-    sukker: p.ingredients?.sugar,
-    syre: p.ingredients?.acid,
-    allergener: p.ingredients?.allergens,
+    druer: druerArray,
+    sukker: p.ingredients?.sugar || null,
+    syre: p.ingredients?.acid || null,
+    allergener: p.ingredients?.allergens || null,
 
     // Smaksprofil
     friskhet: toInt(p.description?.freshness),
@@ -198,23 +203,25 @@ export function tilDatabase(p: PressProduct): Record<string, any> {
     garvestoffer: toInt(p.description?.tannins),
 
     // Beskrivelse
-    farge_beskrivelse: p.description?.characteristics?.colour,
-    lukt: p.description?.characteristics?.odour,
-    smak: p.description?.characteristics?.taste,
-    smak_beskrivelse: p.description?.characteristics?.taste,
+    farge_beskrivelse: p.description?.characteristics?.colour || null,
+    lukt: p.description?.characteristics?.odour || null,
+    smak: p.description?.characteristics?.taste || null,
+    smak_beskrivelse: p.description?.characteristics?.taste || null,
 
     // Mat-paring
-    matparing: p.description?.recommendedFood || [],
+    matparing: matparingJsonb,
+    passer_til: passerTilArray,
 
     // Salg
-    utvalg: p.assortment?.assortment,
+    utvalg: p.assortment?.assortment || null,
     pris: gjeldendePris?.salesPrice ?? null,
     pris_per_liter: gjeldendePris?.salesPricePrLiter ?? null,
 
-    // Bilde (Vinmonopolets forutsigbare URL)
+    // Bilde
     bilde_url: `https://bilder.vinmonopolet.no/cache/515x515-0/${p.basic.productId}-1.jpg`,
     produkt_url: `https://www.vinmonopolet.no/p/${p.basic.productId}`,
 
+    sist_oppdatert: new Date().toISOString(),
     press_data_oppdatert: new Date().toISOString(),
   };
 }
