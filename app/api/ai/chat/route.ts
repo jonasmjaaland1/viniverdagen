@@ -5,26 +5,36 @@ import { createClient } from '@/lib/supabase-server';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-// Verktøy AI har tilgang til
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'sok_viner',
-    description: 'Søk i klubbens viner. Returnerer viner med snitt-score, antall smakinger, land, kategori, pris.',
+    description: 'Søk i klubbens viner. Returnerer viner med snitt-score, antall smakinger, land, kategori, pris, OG smaksprofil (fylde, sødme, friskhet, bitterhet, garvestoffer på skala 1-12).',
     input_schema: {
       type: 'object',
       properties: {
         sok: { type: 'string', description: 'Søketekst (navn, produsent, område). Tom streng for å hente alle.' },
         kategori: { type: 'string', description: 'Filter: Rødvin, Hvitvin, Rosévin, Musserende, Dessertvin, etc.' },
         land: { type: 'string', description: 'Filter på land' },
+        distrikt: { type: 'string', description: 'Filter på distrikt/region' },
+        druetype: { type: 'string', description: 'Søk etter druetype (matches mot navn i druer-array)' },
         min_score: { type: 'number', description: 'Minimum snitt-score (1-10)' },
         maks_pris: { type: 'number', description: 'Maks pris i kroner' },
+        min_pris: { type: 'number', description: 'Minimum pris i kroner' },
+        min_fylde: { type: 'number', description: 'Minimum fylde 1-12' },
+        maks_fylde: { type: 'number', description: 'Maks fylde 1-12' },
+        min_sodme: { type: 'number', description: 'Minimum sødme 1-12' },
+        maks_sodme: { type: 'number', description: 'Maks sødme 1-12 (lavt = tørt)' },
+        min_friskhet: { type: 'number', description: 'Minimum friskhet/syre 1-12' },
+        min_garvestoffer: { type: 'number', description: 'Minimum garvestoffer 1-12' },
+        er_okologisk: { type: 'boolean', description: 'Bare økologiske viner' },
+        passer_til: { type: 'string', description: 'Mat-paring (f.eks. "lam", "fisk", "ost")' },
         limit: { type: 'number', description: 'Maks antall resultater (default 20)' },
       },
     },
   },
   {
     name: 'hent_topp_viner',
-    description: 'Hent klubbens høyest scorede viner sortert etter snitt-score. Bruk når brukeren spør om "beste", "favoritt", "topp" viner.',
+    description: 'Hent klubbens høyest scorede viner sortert etter snitt-score.',
     input_schema: {
       type: 'object',
       properties: {
@@ -37,7 +47,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'hent_klubbkvelder',
-    description: 'Hent klubbkvelder med dato, navn, antall viner, antall oppmøtte. Brukes for spørsmål om klubbkvelder.',
+    description: 'Hent klubbkvelder med dato, navn, antall viner, antall oppmøtte.',
     input_schema: {
       type: 'object',
       properties: {
@@ -47,7 +57,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'hent_klubbkveld_detaljer',
-    description: 'Hent detaljer om en spesifikk klubbkveld: alle viner, scorer, kommentarer.',
+    description: 'Hent detaljer om en spesifikk klubbkveld.',
     input_schema: {
       type: 'object',
       properties: {
@@ -58,12 +68,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'hent_medlems_smakinger',
-    description: 'Hent et medlems scorer og kommentarer på viner. Brukes for spørsmål om "hva har X likt", "X sin favoritt", etc.',
+    description: 'Hent et medlems scorer og kommentarer på viner.',
     input_schema: {
       type: 'object',
       properties: {
         medlem_navn: { type: 'string', description: 'Navnet på medlemmet (kan være delvis match)' },
-        sortert_etter: { type: 'string', enum: ['score', 'dato'], description: 'Sortér etter score (høyest først) eller dato (nyest først)' },
+        sortert_etter: { type: 'string', enum: ['score', 'dato'], description: 'Sortér etter score eller dato' },
         limit: { type: 'number', description: 'Maks antall (default 10)' },
       },
       required: ['medlem_navn'],
@@ -71,17 +81,27 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'hent_klubb_statistikk',
-    description: 'Hent generell statistikk om klubben: antall viner, snittscore, fordeling per land/kategori, mest aktive medlemmer.',
+    description: 'Hent generell statistikk om klubben.',
     input_schema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
           enum: ['oversikt', 'per_land', 'per_kategori', 'medlemmer'],
-          description: 'Hvilken type statistikk',
         },
       },
       required: ['type'],
+    },
+  },
+  {
+    name: 'hent_vin_detaljer',
+    description: 'Hent FULL info om en spesifikk vin: smaksprofil, druer, mat-paring, beskrivelser. Bruk når brukeren spør om detaljer på en bestemt vin.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        varenummer: { type: 'string', description: 'Varenummer (productId)' },
+      },
+      required: ['varenummer'],
     },
   },
 ];
@@ -89,26 +109,69 @@ const TOOLS: Anthropic.Tool[] = [
 async function utforVerktoy(supabase: any, navn: string, input: any): Promise<string> {
   try {
     if (navn === 'sok_viner') {
-      let query = supabase.from('vin_oversikt').select('*');
+      // Bygg query - vi joiner med vinmonopol_produkter for full info
+      let query = supabase
+        .from('vin_oversikt')
+        .select('*, vinmonopol_produkter!inner(*)');
+
       if (input.sok && input.sok.trim()) {
         query = query.ilike('navn', `%${input.sok.trim()}%`);
       }
-      if (input.kategori) {
-        query = query.eq('hovedkategori', input.kategori);
-      }
-      if (input.land) {
-        query = query.ilike('land', `%${input.land}%`);
-      }
-      if (input.min_score) {
-        query = query.gte('snitt_total', input.min_score);
-      }
-      if (input.maks_pris) {
-        query = query.lte('pris', input.maks_pris);
-      }
+      if (input.kategori) query = query.eq('hovedkategori', input.kategori);
+      if (input.land) query = query.ilike('land', `%${input.land}%`);
+      if (input.distrikt) query = query.ilike('distrikt', `%${input.distrikt}%`);
+      if (input.min_score) query = query.gte('snitt_total', input.min_score);
+      if (input.maks_pris) query = query.lte('pris', input.maks_pris);
+      if (input.min_pris) query = query.gte('pris', input.min_pris);
+
       const limit = input.limit || 20;
-      const { data, error } = await query.order('snitt_total', { ascending: false, nullsFirst: false }).limit(limit);
+      const { data, error } = await query
+        .order('snitt_total', { ascending: false, nullsFirst: false })
+        .limit(limit * 2); // hent flere så vi kan filtrere etterpå
+
       if (error) return JSON.stringify({ feil: error.message });
-      return JSON.stringify({ antall: data?.length || 0, viner: data || [] });
+
+      // Filtrer på utvidede felter (som er på vinmonopol_produkter)
+      let filtrert = (data || []).map((v: any) => ({
+        ...v,
+        fylde: v.vinmonopol_produkter?.fylde,
+        sodme: v.vinmonopol_produkter?.sodme,
+        friskhet: v.vinmonopol_produkter?.friskhet,
+        bitterhet: v.vinmonopol_produkter?.bitterhet,
+        garvestoffer: v.vinmonopol_produkter?.garvestoffer,
+        druer: v.vinmonopol_produkter?.druer,
+        passer_til: v.vinmonopol_produkter?.passer_til,
+        er_okologisk: v.vinmonopol_produkter?.er_okologisk,
+        distrikt: v.vinmonopol_produkter?.distrikt,
+      }));
+
+      if (input.min_fylde) filtrert = filtrert.filter((v: any) => v.fylde >= input.min_fylde);
+      if (input.maks_fylde) filtrert = filtrert.filter((v: any) => v.fylde <= input.maks_fylde);
+      if (input.min_sodme) filtrert = filtrert.filter((v: any) => v.sodme >= input.min_sodme);
+      if (input.maks_sodme) filtrert = filtrert.filter((v: any) => v.sodme <= input.maks_sodme);
+      if (input.min_friskhet) filtrert = filtrert.filter((v: any) => v.friskhet >= input.min_friskhet);
+      if (input.min_garvestoffer) filtrert = filtrert.filter((v: any) => v.garvestoffer >= input.min_garvestoffer);
+      if (input.er_okologisk === true) filtrert = filtrert.filter((v: any) => v.er_okologisk === true);
+      if (input.druetype) {
+        const drueSok = input.druetype.toLowerCase();
+        filtrert = filtrert.filter((v: any) =>
+          Array.isArray(v.druer) && v.druer.some((d: string) => d.toLowerCase().includes(drueSok))
+        );
+      }
+      if (input.passer_til) {
+        const matSok = input.passer_til.toLowerCase();
+        filtrert = filtrert.filter((v: any) =>
+          Array.isArray(v.passer_til) && v.passer_til.some((m: string) => m.toLowerCase().includes(matSok))
+        );
+      }
+
+      // Fjern vinmonopol_produkter-nesten fra resultatet, behold de relevante feltene
+      const renResult = filtrert.slice(0, limit).map((v: any) => {
+        const { vinmonopol_produkter, ...rest } = v;
+        return rest;
+      });
+
+      return JSON.stringify({ antall: renResult.length, viner: renResult });
     }
 
     if (navn === 'hent_topp_viner') {
@@ -130,10 +193,7 @@ async function utforVerktoy(supabase: any, navn: string, input: any): Promise<st
       const { data, error } = await supabase
         .from('klubbkvelder')
         .select(`
-          id,
-          navn,
-          dato,
-          tema,
+          id, navn, dato, tema,
           smakinger:smakinger(count),
           oppmote(count)
         `)
@@ -149,8 +209,7 @@ async function utforVerktoy(supabase: any, navn: string, input: any): Promise<st
         .select(`
           id, navn, dato, tema,
           smakinger (
-            id,
-            varenummer,
+            id, varenummer,
             vinmonopol_produkter (navn, hovedkategori, land, produsent),
             medlemmer:tatt_med_av (navn),
             scorer (score, medlemmer (navn)),
@@ -176,8 +235,7 @@ async function utforVerktoy(supabase: any, navn: string, input: any): Promise<st
       const { data: scorer, error: e2 } = await supabase
         .from('scorer')
         .select(`
-          score,
-          opprettet_at,
+          score, opprettet_at,
           smakinger (
             varenummer,
             vinmonopol_produkter (navn, hovedkategori, land)
@@ -229,6 +287,16 @@ async function utforVerktoy(supabase: any, navn: string, input: any): Promise<st
       }
     }
 
+    if (navn === 'hent_vin_detaljer') {
+      const { data, error } = await supabase
+        .from('vinmonopol_produkter')
+        .select('*')
+        .eq('varenummer', input.varenummer)
+        .single();
+      if (error) return JSON.stringify({ feil: error.message });
+      return JSON.stringify(data);
+    }
+
     return JSON.stringify({ feil: `Ukjent verktøy: ${navn}` });
   } catch (e: any) {
     return JSON.stringify({ feil: e.message });
@@ -257,17 +325,28 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = `Du er VinIverdagens AI-sommelier. Du har tilgang til klubbens database via verktøy og hjelper medlemmene med spørsmål om vinene de har drukket, klubbkveldene, og personlige preferanser.
 
+Verktøyene gir deg tilgang til:
+- Søk i viner med filtre på smaksprofil (fylde, sødme, friskhet, bitterhet, garvestoffer på skala 1-12), druetype, mat-paring, land, distrikt, økologisk
+- Detaljer om enkeltviner (smaksprofil, druer, mat-paring, beskrivelser)
+- Klubbkvelder, medlemsstatistikk, topp-viner
+
 Regler:
 - Svar alltid på norsk (bokmål), naturlig og vennlig
 - Bruk verktøyene for å hente faktiske data - ikke gjett eller finn på
 - Når du presenterer viner, oppgi navn, kategori/land, snitt-score, og antall smakinger
 - For score: vis alltid med 1 desimal (8.4, ikke 8)
+- For smaksprofil: forklar tallene naturlig ("lav sødme" hvis sødme < 4, "balansert" hvis 5-7, "høy" hvis 8+)
 - Hvis brukeren spør om noe som ikke finnes i databasen, si det ærlig
 - Vær konsis - ikke overforklar
 - Bruk gjerne emoji som 🍷 ⭐ 🥂 sparsomt for å gi varme
 - Når brukeren spør om "klubbens favoritt", "beste", osv. - bruk hent_topp_viner med min_smakinger=2 for relevans
 
-Du kan kombinere verktøy: f.eks. først hent_klubb_statistikk, deretter sok_viner for å gi rikere svar.`;
+Tips for naturlig språk:
+- "Tørr vin" = lav sødme (sodme < 4)
+- "Fyldig vin" = høy fylde (fylde >= 8)
+- "Syrlig/frisk vin" = høy friskhet (friskhet >= 8)
+- "Kraftig rødvin" = høy fylde og høy garvestoffer
+- "Lett vin" = lav fylde (fylde <= 5)`;
 
     const conversationMessages: Anthropic.MessageParam[] = meldinger.map((m: any) => ({
       role: m.rolle,
@@ -290,17 +369,14 @@ Du kan kombinere verktøy: f.eks. først hent_klubb_statistikk, deretter sok_vin
         messages: conversationMessages,
       });
 
-      // Sjekk om AI vil bruke verktøy
       const verktoyBlokker = respons.content.filter((c: any) => c.type === 'tool_use');
       const tekstBlokker = respons.content.filter((c: any) => c.type === 'text');
 
       if (verktoyBlokker.length === 0) {
-        // AI er ferdig - returnér tekstsvaret
         svar = tekstBlokker.map((b: any) => b.text).join('\n').trim();
         break;
       }
 
-      // AI vil bruke verktøy - utfør dem og gi resultatene tilbake
       conversationMessages.push({
         role: 'assistant',
         content: respons.content,
