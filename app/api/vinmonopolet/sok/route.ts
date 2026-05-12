@@ -1,35 +1,36 @@
+// app/api/vinmonopolet/sok/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient, createServiceClient } from '@/lib/supabase-server';
-import { hentProdukt, sokVinmonopolet, tilHovedkategori } from '@/lib/vinmonopolet';
+import { sokProdukter, fritekstSok, type PressProduct } from '@/lib/vinmonopolet-press';
 
-// Søk: GET /api/vinmonopolet/sok?q=...
+export const runtime = 'nodejs';
+
 export async function GET(req: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ feil: 'Ikke innlogget' }, { status: 401 });
-
-  const q = req.nextUrl.searchParams.get('q')?.trim();
-  if (!q || q.length < 2) {
+  const { searchParams } = new URL(req.url);
+  const sok = searchParams.get('q')?.trim() || '';
+  if (!sok) {
     return NextResponse.json({ resultater: [] });
   }
 
-  // Søk lokalt først
-  let resultater = await sokVinmonopolet(supabase, q, 10);
-
-  // Hvis varenummer og ikke funnet lokalt - prøv API direkte og lagre
-  const erVarenummer = /^\d+$/.test(q);
-  if (resultater.length === 0 && erVarenummer) {
-    const produkt = await hentProdukt(q);
-    if (produkt && produkt.varenummer) {
-      const service = createServiceClient();
-      await service.from('vinmonopol_produkter').upsert({
-        ...produkt,
-        hovedkategori: tilHovedkategori(produkt.produkttype),
-        sist_oppdatert: new Date().toISOString(),
-      }, { onConflict: 'varenummer' });
-      resultater = [produkt];
+  try {
+    // Prøv først navn-søk, så fritekst hvis tomt
+    let treff = await sokProdukter(sok, 20);
+    if (treff.length === 0) {
+      treff = await fritekstSok(sok, 20);
     }
-  }
 
-  return NextResponse.json({ resultater });
+    const resultater = treff.map((p: PressProduct) => ({
+      varenummer: p.basic.productId,
+      navn: p.basic.productShortName,
+      land: p.origins?.origin?.country || null,
+      produsent: p.logistics?.manufacturerName || null,
+      hovedkategori: p.classification?.mainProductTypeName || null,
+      pris: p.prices && p.prices.length > 0 ? p.prices[p.prices.length - 1].salesPrice : null,
+      bilde_url: `https://bilder.vinmonopolet.no/cache/515x515-0/${p.basic.productId}-1.jpg`,
+    }));
+
+    return NextResponse.json({ resultater });
+  } catch (e: any) {
+    console.error('Sok-feil:', e);
+    return NextResponse.json({ feil: e.message, resultater: [] }, { status: 500 });
+  }
 }
