@@ -1,40 +1,39 @@
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase-server';
-import { redirect } from 'next/navigation';
-import ForsideDatoForslag from '@/components/ForsideDatoForslag';
+import { createClient } from "@/lib/supabase-server";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import ForslagKort from "@/components/ForslagKort";
 
-export default async function Forside() {
+export default async function DatoerSide() {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
   const { data: medlem } = await supabase
-    .from('medlemmer')
-    .select('godkjent, navn')
-    .eq('id', user.id)
+    .from("medlemmer")
+    .select("godkjent, er_admin, er_klubbmedlem")
+    .eq("id", user.id)
     .single();
 
-  if (!medlem?.godkjent) {
-    return (
-      <div className="max-w-2xl mx-auto px-6 py-20 text-center">
-        <h1 className="font-display text-3xl text-wine-800 mb-4">Venter på godkjenning</h1>
-        <div className="gold-line w-24 mx-auto my-4" />
-        <p className="text-ink-700/80">
-          Kontoen din er registrert, men venter på godkjenning fra administrator.
-        </p>
-      </div>
-    );
-  }
+  if (!medlem?.godkjent) redirect("/login");
 
-  // Hent åpne dato-forslag
   const { data: forslagRader } = await supabase
-    .from('dato_forslag_oversikt')
-    .select('*')
-    .eq('status', 'apen');
+    .from("dato_forslag_oversikt")
+    .select("*");
 
-  const { data: alleSvar } = await supabase
-    .from('dato_svar')
-    .select('alternativ_id, medlem_id, svar');
+  const { data: alleSvar } = await supabase.from("dato_svar").select(`
+      alternativ_id,
+      medlem_id,
+      svar,
+      medlemmer (navn)
+    `);
+
+  const { data: medlemmer } = await supabase
+    .from("medlemmer")
+    .select("id, navn")
+    .eq("godkjent", true)
+    .order("navn");
 
   const forslagMap: Record<string, any> = {};
   (forslagRader || []).forEach((rad: any) => {
@@ -43,187 +42,108 @@ export default async function Forside() {
         id: rad.forslag_id,
         tittel: rad.tittel,
         beskrivelse: rad.beskrivelse,
+        status: rad.status,
+        bekreftet_dato: rad.bekreftet_dato,
+        bekreftet_klubbkveld_id: rad.bekreftet_klubbkveld_id,
+        opprettet_av_navn: rad.opprettet_av_navn,
+        ansvarlig_id: rad.ansvarlig_id,
         ansvarlig_navn: rad.ansvarlig_navn,
+        opprettet_at: rad.opprettet_at,
         alternativer: [],
       };
     }
     if (rad.alternativ_id) {
       const mineSvar = (alleSvar || []).find(
-        (s: any) => s.alternativ_id === rad.alternativ_id && s.medlem_id === user.id
+        (s: any) =>
+          s.alternativ_id === rad.alternativ_id && s.medlem_id === user.id,
       );
+      const alleSvarForAlt = (alleSvar || [])
+        .filter((s: any) => s.alternativ_id === rad.alternativ_id)
+        .map((s: any) => ({
+          medlem_id: s.medlem_id,
+          medlem_navn: s.medlemmer?.navn || "Ukjent",
+          svar: s.svar,
+        }));
+
       forslagMap[rad.forslag_id].alternativer.push({
         id: rad.alternativ_id,
         dato: rad.dato,
+        notat: rad.notat,
         antall_kan: rad.antall_kan,
         antall_kan_ikke: rad.antall_kan_ikke,
         antall_kanskje: rad.antall_kanskje,
         mitt_svar: mineSvar?.svar || null,
+        alle_svar: alleSvarForAlt,
       });
     }
   });
 
-  const apneForslag = Object.values(forslagMap);
-
-  // Finn neste fremtidige eller siste passerte klubbkveld
-  const idag = new Date().toISOString().split('T')[0];
-  const { data: neste } = await supabase
-    .from('klubbkvelder')
-    .select('*')
-    .gte('dato', idag)
-    .order('dato', { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  const { data: siste } = await supabase
-    .from('klubbkvelder')
-    .select('*')
-    .lt('dato', idag)
-    .order('dato', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const visKveld = neste || siste;
-  const erFremtidig = !!neste;
-
-  let oppmotte: any[] = [];
-  let smakinger: any[] = [];
-
-  if (visKveld) {
-    const { data: opp } = await supabase
-      .from('oppmote')
-      .select('medlem_id, medlemmer(navn)')
-      .eq('klubbkveld_id', visKveld.id);
-    oppmotte = opp || [];
-
-    const { data: sm } = await supabase
-      .from('smakinger')
-      .select(`
-        id,
-        varenummer,
-        tatt_med_av,
-        vinmonopol_produkter(navn, hovedkategori, bilde_url, pris),
-        medlemmer(navn),
-        scorer(score)
-      `)
-      .eq('klubbkveld_id', visKveld.id);
-    smakinger = sm || [];
-  }
+  const forslag = Object.values(forslagMap);
+  const apneForslag = forslag.filter((f: any) => f.status === "apen");
+  const tidligereForslag = forslag.filter((f: any) => f.status !== "apen");
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-12">
-      {/* Hero */}
-      <div className="text-center mb-12 fade-up">
-        <p className="text-sm uppercase tracking-[0.3em] text-wine-700/70 font-sans mb-4">
-          Velkommen, {medlem.navn}
-        </p>
-        <h1 className="font-display text-6xl md:text-7xl text-wine-900 mb-4 text-shadow-wine">
-          <span className="italic font-light">In vino,</span> veritas
-        </h1>
-        <div className="gold-line w-32 mx-auto" />
+    <div className="space-y-6 max-w-4xl mx-auto px-4 sm:px-6 py-6">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="font-display text-3xl text-wine-900">Dato-forslag</h1>
+          <p className="text-sm font-sans text-ink-700/70 mt-1">
+            Svar på når du kan delta på neste klubbkveld
+          </p>
+        </div>
+        {medlem.er_admin && (
+          <Link href="/datoer/nytt" className="btn-primary text-sm">
+            + Nytt forslag
+          </Link>
+        )}
       </div>
 
-      {/* Dato-forslag - vises øverst hvis det finnes åpne forslag */}
       {apneForslag.length > 0 && (
-        <ForsideDatoForslag forslag={apneForslag as any} brukerId={user.id} />
+        <section className="space-y-4">
+          <h2 className="text-xs uppercase tracking-wider font-sans text-ink-700/60">
+            Åpne forslag ({apneForslag.length})
+          </h2>
+          {apneForslag.map((f: any) => (
+            <ForslagKort
+              key={f.id}
+              forslag={f}
+              brukerId={user.id}
+              erAdmin={medlem.er_admin}
+              medlemmer={medlemmer || []}
+            />
+          ))}
+        </section>
       )}
 
-      {visKveld ? (
-        <section className="kort overflow-hidden fade-up" style={{ animationDelay: '0.1s' }}>
-          {visKveld.bilde_url && (
-            <div
-              className="h-64 md:h-80 bg-cover bg-center"
-              style={{ backgroundImage: `url(${visKveld.bilde_url})` }}
-            />
-          )}
-
-          <div className="p-8 md:p-12">
-            <p className="text-sm uppercase tracking-[0.25em] text-wine-700 font-sans mb-3">
-              {erFremtidig ? 'Neste klubbkveld' : 'Siste klubbkveld'}
-            </p>
-            <h2 className="font-display text-4xl md:text-5xl text-wine-900 mb-2">
-              {visKveld.tittel}
-            </h2>
-            <p className="text-ink-700/70 italic mb-6">
-              {new Date(visKveld.dato).toLocaleDateString('nb-NO', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })}
-              {visKveld.sted && ` · ${visKveld.sted}`}
-            </p>
-
-            {visKveld.kommentar && (
-              <p className="text-lg text-ink-700/80 mb-6 leading-relaxed">{visKveld.kommentar}</p>
-            )}
-
-            {oppmotte.length > 0 && (
-              <div className="mb-6">
-                <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-2">
-                  Til stede
-                </p>
-                <p className="text-ink-700/80">
-                  {oppmotte.map((o) => o.medlemmer?.navn).filter(Boolean).join(' · ')}
-                </p>
-              </div>
-            )}
-
-            {smakinger.length > 0 && (
-              <div>
-                <p className="text-xs uppercase tracking-wider text-ink-700/50 font-sans mb-3">
-                  Viner ({smakinger.length})
-                </p>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {smakinger.map((s) => {
-                    const scorer = s.scorer || [];
-                    const snitt =
-                      scorer.length > 0
-                        ? (scorer.reduce((a: number, b: any) => a + b.score, 0) / scorer.length).toFixed(1)
-                        : null;
-                    return (
-                      <Link
-                        key={s.id}
-                        href={`/klubbkvelder/${visKveld.id}#smaking-${s.id}`}
-                        className="flex gap-3 p-3 hover:bg-cream-100 rounded transition"
-                      >
-                        {s.vinmonopol_produkter?.bilde_url && (
-                          <img
-                            src={s.vinmonopol_produkter.bilde_url}
-                            alt=""
-                            className="w-12 h-16 object-contain"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="font-display text-base text-wine-900 truncate">
-                            {s.vinmonopol_produkter?.navn}
-                          </p>
-                          <p className="text-xs font-sans text-ink-700/60">
-                            {s.medlemmer?.navn}
-                          </p>
-                          {snitt && (
-                            <p className="text-sm text-wine-700 font-display mt-1">
-                              ★ {snitt}
-                            </p>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-8 pt-6 border-t border-wine-900/10">
-              <Link href={`/klubbkvelder/${visKveld.id}`} className="btn-primary">
-                Åpne kvelden
-              </Link>
-            </div>
-          </div>
-        </section>
-      ) : (
-        <div className="text-center py-20 text-ink-700/60">
-          <p className="italic">Ingen klubbkvelder er opprettet ennå.</p>
+      {apneForslag.length === 0 && (
+        <div className="kort p-8 text-center">
+          <p className="text-5xl mb-4">📅</p>
+          <p className="font-display text-xl text-wine-900">
+            Ingen åpne forslag
+          </p>
+          <p className="text-sm font-sans text-ink-700/70 mt-2">
+            {medlem.er_admin
+              ? 'Klikk "Nytt forslag" for å foreslå datoer for neste klubbkveld'
+              : "Admin har ikke foreslått noen datoer ennå"}
+          </p>
         </div>
+      )}
+
+      {tidligereForslag.length > 0 && (
+        <section className="space-y-4 pt-4">
+          <h2 className="text-xs uppercase tracking-wider font-sans text-ink-700/60">
+            Tidligere forslag
+          </h2>
+          {tidligereForslag.map((f: any) => (
+            <ForslagKort
+              key={f.id}
+              forslag={f}
+              brukerId={user.id}
+              erAdmin={medlem.er_admin}
+              medlemmer={medlemmer || []}
+            />
+          ))}
+        </section>
       )}
     </div>
   );
