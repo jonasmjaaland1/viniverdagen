@@ -90,12 +90,11 @@ export default function ForsideDatoForslag({
             Trykk på datoene som passer for deg
           </p>
         </div>
-        <Link
-          href="/datoer"
-          className="text-xs font-sans uppercase tracking-wider text-wine-700 hover:text-wine-900 transition"
-        >
-          Se alle →
-        </Link>
+        href="/datoer"
+               className="text-xs font-sans uppercase tracking-wider text-wine-700 hover:text-wine-900 transition cursor-pointer relative z-10"
+             >
+               Se alle →
+             </a>
       </div>
 
       {forslag.map((f) => {
