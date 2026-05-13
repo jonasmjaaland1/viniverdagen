@@ -32,9 +32,15 @@ export default async function Forside() {
     .select('*')
     .eq('status', 'apen');
 
+  // Hent alle svar med medlemsnavn for å vise "hvem har svart"
   const { data: alleSvar } = await supabase
     .from('dato_svar')
-    .select('alternativ_id, medlem_id, svar');
+    .select(`
+      alternativ_id,
+      medlem_id,
+      svar,
+      medlemmer (navn)
+    `);
 
   const forslagMap: Record<string, any> = {};
   (forslagRader || []).forEach((rad: any) => {
@@ -51,6 +57,14 @@ export default async function Forside() {
       const mineSvar = (alleSvar || []).find(
         (s: any) => s.alternativ_id === rad.alternativ_id && s.medlem_id === user.id
       );
+      const alleSvarForAlt = (alleSvar || [])
+        .filter((s: any) => s.alternativ_id === rad.alternativ_id)
+        .map((s: any) => ({
+          medlem_id: s.medlem_id,
+          medlem_navn: s.medlemmer?.navn || 'Ukjent',
+          svar: s.svar,
+        }));
+
       forslagMap[rad.forslag_id].alternativer.push({
         id: rad.alternativ_id,
         dato: rad.dato,
@@ -58,6 +72,7 @@ export default async function Forside() {
         antall_kan_ikke: rad.antall_kan_ikke,
         antall_kanskje: rad.antall_kanskje,
         mitt_svar: mineSvar?.svar || null,
+        alle_svar: alleSvarForAlt,
       });
     }
   });
@@ -122,7 +137,7 @@ export default async function Forside() {
         <div className="gold-line w-32 mx-auto" />
       </div>
 
-      {/* Dato-forslag - vises øverst hvis det finnes åpne forslag */}
+      {/* Dato-forslag */}
       {apneForslag.length > 0 && (
         <ForsideDatoForslag forslag={apneForslag as any} brukerId={user.id} />
       )}

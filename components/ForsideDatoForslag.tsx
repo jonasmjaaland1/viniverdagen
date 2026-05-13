@@ -5,6 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-browser';
 
+interface SvarPerson {
+  medlem_id: string;
+  medlem_navn: string;
+  svar: 'kan' | 'kan_ikke' | 'kanskje';
+}
+
 interface Alternativ {
   id: string;
   dato: string;
@@ -12,6 +18,7 @@ interface Alternativ {
   antall_kan_ikke: number;
   antall_kanskje: number;
   mitt_svar: 'kan' | 'kan_ikke' | 'kanskje' | null;
+  alle_svar?: SvarPerson[];
 }
 
 interface Forslag {
@@ -32,6 +39,7 @@ export default function ForsideDatoForslag({
   const router = useRouter();
   const supabase = createClient();
   const [laster, setLaster] = useState<string | null>(null);
+  const [visSvar, setVisSvar] = useState<string | null>(null);
 
   async function svar(
     alternativId: string,
@@ -86,7 +94,7 @@ export default function ForsideDatoForslag({
           href="/datoer"
           className="text-xs font-sans uppercase tracking-wider text-wine-700 hover:text-wine-900 transition"
         >
-          Se detaljer →
+          Se alle →
         </Link>
       </div>
 
@@ -116,6 +124,8 @@ export default function ForsideDatoForslag({
             <div className="space-y-2 pt-2">
               {sortertAlt.map((alt) => {
                 const erBeste = beste && beste.id === alt.id;
+                const visAlle = visSvar === alt.id;
+                const harSvar = (alt.alle_svar?.length || 0) > 0;
                 return (
                   <div
                     key={alt.id}
@@ -179,6 +189,36 @@ export default function ForsideDatoForslag({
                         </button>
                       </div>
                     </div>
+
+                    {/* Vis hvem har svart */}
+                    {harSvar && (
+                      <div className="mt-2 pt-2 border-t border-wine-900/5">
+                        <button
+                          onClick={() => setVisSvar(visAlle ? null : alt.id)}
+                          className="text-xs font-sans text-ink-700/50 hover:text-wine-700 transition"
+                        >
+                          {visAlle ? 'Skjul' : 'Vis'} hvem har svart ({alt.alle_svar!.length})
+                        </button>
+                        {visAlle && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {alt.alle_svar!.map((s) => (
+                              <span
+                                key={s.medlem_id}
+                                className={`text-xs px-2 py-0.5 rounded font-sans ${
+                                  s.svar === 'kan'
+                                    ? 'bg-green-100 text-green-800'
+                                    : s.svar === 'kanskje'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-cream-200 text-ink-700/70'
+                                }`}
+                              >
+                                {s.medlem_navn}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
