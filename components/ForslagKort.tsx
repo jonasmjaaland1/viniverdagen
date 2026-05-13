@@ -51,7 +51,6 @@ export default function ForslagKort({
   const [visDetaljer, setVisDetaljer] = useState<string | null>(null);
   const [redigerer, setRedigerer] = useState(false);
 
-  // Rediger-state
   const [tittel, setTittel] = useState(forslag.tittel || '');
   const [beskrivelse, setBeskrivelse] = useState(forslag.beskrivelse || '');
   const [ansvarligId, setAnsvarligId] = useState(forslag.ansvarlig_id || '');
@@ -247,7 +246,6 @@ export default function ForslagKort({
 
   return (
     <article className="kort p-6 md:p-8 space-y-5">
-      {/* Header - enten visning eller redigering */}
       {redigerer ? (
         <div className="space-y-3">
           <div>
@@ -349,12 +347,12 @@ export default function ForslagKort({
         </p>
       )}
 
-      {/* Datoalternativer */}
       <div className="space-y-2">
         {sortertAlternativer.map((alt) => {
           const visAlle = visDetaljer === alt.id;
           const erBeste = beste && beste.id === alt.id && forslag.status === 'apen';
           const erBekreftet = forslag.bekreftet_klubbkveld_id && forslag.status === 'bekreftet' && alt.dato === forslag.bekreftet_dato;
+          const totaltSvar = (alt.alle_svar?.length || 0);
           return (
             <div
               key={alt.id}
@@ -422,27 +420,34 @@ export default function ForslagKort({
                 )}
               </div>
 
-              {alt.alle_svar && alt.alle_svar.length > 0 && (
-                <div className="mt-2">
+              {/* Vis hvem-knapp - mer synlig nå */}
+              {totaltSvar > 0 && (
+                <div className="mt-3">
                   <button
                     onClick={() => setVisDetaljer(visAlle ? null : alt.id)}
-                    className="text-xs font-sans text-ink-700/50 hover:text-wine-700 transition"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-sans bg-wine-700/10 hover:bg-wine-700/20 text-wine-800 rounded-full transition border border-wine-700/20"
                   >
-                    {visAlle ? 'Skjul' : 'Vis'} hvem har svart
+                    <span>👥</span>
+                    <span className="font-medium">
+                      {visAlle ? 'Skjul' : 'Vis'} hvem har svart ({totaltSvar})
+                    </span>
                   </button>
                   {visAlle && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {alt.alle_svar.map((s) => (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {alt.alle_svar!.map((s) => (
                         <span
                           key={s.medlem_id}
-                          className={`text-xs px-2 py-0.5 rounded font-sans ${
+                          className={`text-xs px-2.5 py-1 rounded-full font-sans ${
                             s.svar === 'kan'
-                              ? 'bg-green-100 text-green-800'
+                              ? 'bg-green-100 text-green-800 border border-green-200'
                               : s.svar === 'kanskje'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-cream-200 text-ink-700/70'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-ink-700/10 text-ink-700/70 border border-ink-700/15'
                           }`}
                         >
+                          {s.svar === 'kan' && '✓ '}
+                          {s.svar === 'kanskje' && '~ '}
+                          {s.svar === 'kan_ikke' && '✕ '}
                           {s.medlem_navn}
                         </span>
                       ))}
@@ -473,7 +478,6 @@ export default function ForslagKort({
           );
         })}
 
-        {/* Legg til ny dato (admin) */}
         {erAdmin && forslag.status === 'apen' && (
           <div className="flex gap-2 pt-2">
             <input
@@ -494,7 +498,6 @@ export default function ForslagKort({
         )}
       </div>
 
-      {/* Admin-handlinger */}
       {erAdmin && forslag.status === 'apen' && !redigerer && (
         <div className="pt-4 border-t border-wine-900/10 flex gap-3 flex-wrap">
           <button
