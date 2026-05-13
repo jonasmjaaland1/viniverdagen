@@ -23,31 +23,45 @@ interface Forslag {
   bekreftet_dato: string | null;
   bekreftet_klubbkveld_id: string | null;
   opprettet_av_navn: string;
+  ansvarlig_id?: string | null;
   ansvarlig_navn: string | null;
   opprettet_at: string;
   alternativer: Alternativ[];
+}
+
+interface Medlem {
+  id: string;
+  navn: string;
 }
 
 export default function ForslagKort({
   forslag,
   brukerId,
   erAdmin,
+  medlemmer = [],
 }: {
   forslag: Forslag;
   brukerId: string;
   erAdmin: boolean;
+  medlemmer?: Medlem[];
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [laster, setLaster] = useState<string | null>(null);
   const [visDetaljer, setVisDetaljer] = useState<string | null>(null);
+  const [redigerer, setRedigerer] = useState(false);
+
+  // Rediger-state
+  const [tittel, setTittel] = useState(forslag.tittel || '');
+  const [beskrivelse, setBeskrivelse] = useState(forslag.beskrivelse || '');
+  const [ansvarligId, setAnsvarligId] = useState(forslag.ansvarlig_id || '');
+  const [nyDato, setNyDato] = useState('');
 
   async function svar(alternativId: string, svarVerdi: 'kan' | 'kan_ikke' | 'kanskje', mittEksisterendeSvar?: string | null) {
     if (forslag.status !== 'apen') return;
     setLaster(alternativId);
 
     if (mittEksisterendeSvar === svarVerdi) {
-      // Klikket på samme svar - fjern det
       const { error } = await supabase
         .from('dato_svar')
         .delete()
@@ -85,7 +99,6 @@ export default function ForslagKort({
 
     const tittel = forslag.tittel || `Klubbkveld ${formatDato(alternativ.dato)}`;
 
-    // Opprett klubbkveld
     const { data: kveld, error: e1 } = await supabase
       .from('klubbkvelder')
       .insert({
@@ -102,12 +115,6 @@ export default function ForslagKort({
       return;
     }
 
-    // Oppdater klubbkvelden med ansvarlig (separat fordi felter kan mangle i typescript-genererte typer)
-    if (forslag.bekreftet_dato !== null || forslag.tittel) {
-      // Vi prøver å sette ansvarlig_id og fra_forslag_id via raw update
-    }
-
-    // Sett status på forslag
     const { error: e2 } = await supabase
       .from('dato_forslag')
       .update({
@@ -121,11 +128,10 @@ export default function ForslagKort({
       alert('Klubbkveld opprettet, men kunne ikke oppdatere forslag-status: ' + e2.message);
     }
 
-    // Sett ansvarlig på klubbkveld
     await supabase
       .from('klubbkvelder')
       .update({
-        ansvarlig_id: forslag.ansvarlig_navn ? null : null, // settes via separate query nedenfor
+        ansvarlig_id: forslag.ansvarlig_id || null,
         fra_forslag_id: forslag.id,
       })
       .eq('id', kveld.id);
@@ -158,6 +164,68 @@ export default function ForslagKort({
     if (!error) router.refresh();
   }
 
+  async function lagreRediger() {
+    if (!erAdmin) return;
+    setLaster('rediger');
+    const { error } = await supabase
+      .from('dato_forslag')
+      .update({
+        tittel: tittel.trim() || null,
+        beskrivelse: beskrivelse.trim() || null,
+        ansvarlig_id: ansvarligId || null,
+      })
+      .eq('id', forslag.id);
+    setLaster(null);
+    if (!error) {
+      setRedigerer(false);
+      router.refresh();
+    } else {
+      alert('Kunne ikke lagre: ' + error.message);
+    }
+  }
+
+  function avbrytRediger() {
+    setTittel(forslag.tittel || '');
+    setBeskrivelse(forslag.beskrivelse || '');
+    setAnsvarligId(forslag.ansvarlig_id || '');
+    setNyDato('');
+    setRedigerer(false);
+  }
+
+  async function leggTilDato() {
+    if (!erAdmin || !nyDato) return;
+    setLaster('ny-dato');
+    const { error } = await supabase.from('dato_alternativer').insert({
+      forslag_id: forslag.id,
+      dato: nyDato,
+    });
+    setLaster(null);
+    if (error) {
+      alert('Kunne ikke legge til dato: ' + error.message);
+    } else {
+      setNyDato('');
+      router.refresh();
+    }
+  }
+
+  async function fjernDato(alternativId: string, dato: string) {
+    if (!erAdmin) return;
+    if (forslag.alternativer.length === 1) {
+      alert('Du kan ikke fjerne siste dato. Slett heller hele forslaget.');
+      return;
+    }
+    if (!confirm(`Fjerne ${formatDato(dato)} fra forslaget? Alle svar på denne datoen forsvinner.`)) {
+      return;
+    }
+    setLaster(alternativId);
+    const { error } = await supabase
+      .from('dato_alternativer')
+      .delete()
+      .eq('id', alternativId);
+    setLaster(null);
+    if (!error) router.refresh();
+  }
+
   function formatDato(d: string): string {
     const dato = new Date(d);
     return dato.toLocaleDateString('nb-NO', {
@@ -168,12 +236,10 @@ export default function ForslagKort({
     });
   }
 
-  // Sortér alternativer etter dato
   const sortertAlternativer = [...forslag.alternativer].sort(
     (a, b) => new Date(a.dato).getTime() - new Date(b.dato).getTime()
   );
 
-  // Finn alternativ med flest "kan"
   const beste = sortertAlternativer.reduce<Alternativ | null>(
     (best, alt) => (!best || alt.antall_kan > best.antall_kan ? alt : best),
     null
@@ -181,37 +247,103 @@ export default function ForslagKort({
 
   return (
     <article className="kort p-6 md:p-8 space-y-5">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-display text-2xl text-wine-900">
-              {forslag.tittel || 'Dato-forslag'}
-            </h3>
-            {forslag.status === 'bekreftet' && (
-              <span className="text-xs uppercase tracking-wider font-sans bg-wine-700 text-cream-50 px-2 py-0.5 rounded">
-                Bekreftet
-              </span>
-            )}
-            {forslag.status === 'avlyst' && (
-              <span className="text-xs uppercase tracking-wider font-sans bg-ink-700/30 text-cream-50 px-2 py-0.5 rounded">
-                Avlyst
-              </span>
+      {/* Header - enten visning eller redigering */}
+      {redigerer ? (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs uppercase tracking-wider font-sans text-ink-700/60 block mb-1">
+              Tittel
+            </label>
+            <input
+              value={tittel}
+              onChange={(e) => setTittel(e.target.value)}
+              placeholder="F.eks. Vår-vinkveld"
+              className="input-field"
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wider font-sans text-ink-700/60 block mb-1">
+              Beskrivelse
+            </label>
+            <textarea
+              value={beskrivelse}
+              onChange={(e) => setBeskrivelse(e.target.value)}
+              rows={3}
+              className="input-field resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wider font-sans text-ink-700/60 block mb-1">
+              Ansvarlig
+            </label>
+            <select
+              value={ansvarligId}
+              onChange={(e) => setAnsvarligId(e.target.value)}
+              className="input-field"
+            >
+              <option value="">— ingen valgt —</option>
+              {medlemmer.map((m) => (
+                <option key={m.id} value={m.id}>{m.navn}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={lagreRediger}
+              disabled={laster === 'rediger'}
+              className="btn-primary text-sm disabled:opacity-50"
+            >
+              {laster === 'rediger' ? 'Lagrer...' : 'Lagre endringer'}
+            </button>
+            <button
+              onClick={avbrytRediger}
+              disabled={laster === 'rediger'}
+              className="btn-secondary text-sm"
+            >
+              Avbryt
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-display text-2xl text-wine-900">
+                {forslag.tittel || 'Dato-forslag'}
+              </h3>
+              {forslag.status === 'bekreftet' && (
+                <span className="text-xs uppercase tracking-wider font-sans bg-wine-700 text-cream-50 px-2 py-0.5 rounded">
+                  Bekreftet
+                </span>
+              )}
+              {forslag.status === 'avlyst' && (
+                <span className="text-xs uppercase tracking-wider font-sans bg-ink-700/30 text-cream-50 px-2 py-0.5 rounded">
+                  Avlyst
+                </span>
+              )}
+            </div>
+            <p className="text-xs font-sans text-ink-700/60 mt-1">
+              Foreslått av {forslag.opprettet_av_navn} ·{' '}
+              {new Date(forslag.opprettet_at).toLocaleDateString('nb-NO')}
+            </p>
+            {forslag.ansvarlig_navn && (
+              <p className="text-sm font-sans text-wine-700 mt-2">
+                Ansvarlig: <span className="font-medium">{forslag.ansvarlig_navn}</span>
+              </p>
             )}
           </div>
-          <p className="text-xs font-sans text-ink-700/60 mt-1">
-            Foreslått av {forslag.opprettet_av_navn} ·{' '}
-            {new Date(forslag.opprettet_at).toLocaleDateString('nb-NO')}
-          </p>
-          {forslag.ansvarlig_navn && (
-            <p className="text-sm font-sans text-wine-700 mt-2">
-              Ansvarlig: <span className="font-medium">{forslag.ansvarlig_navn}</span>
-            </p>
+          {erAdmin && forslag.status === 'apen' && (
+            <button
+              onClick={() => setRedigerer(true)}
+              className="text-xs font-sans uppercase tracking-wider text-ink-700/60 hover:text-wine-700 transition"
+            >
+              Rediger
+            </button>
           )}
         </div>
-      </div>
+      )}
 
-      {forslag.beskrivelse && (
+      {!redigerer && forslag.beskrivelse && (
         <p className="text-sm font-sans text-ink-700/85 italic">
           {forslag.beskrivelse}
         </p>
@@ -251,8 +383,7 @@ export default function ForslagKort({
                   </div>
                 </div>
 
-                {/* Svar-knapper for medlem */}
-                {forslag.status === 'apen' && (
+                {forslag.status === 'apen' && !redigerer && (
                   <div className="flex gap-1.5">
                     <button
                       onClick={() => svar(alt.id, 'kan', alt.mitt_svar)}
@@ -291,7 +422,6 @@ export default function ForslagKort({
                 )}
               </div>
 
-              {/* Vis hvem som har svart */}
               {alt.alle_svar && alt.alle_svar.length > 0 && (
                 <div className="mt-2">
                   <button
@@ -321,9 +451,8 @@ export default function ForslagKort({
                 </div>
               )}
 
-              {/* Bekreft-knapp for admin */}
               {erAdmin && forslag.status === 'apen' && (
-                <div className="mt-3 pt-3 border-t border-wine-900/10">
+                <div className="mt-3 pt-3 border-t border-wine-900/10 flex gap-4 flex-wrap">
                   <button
                     onClick={() => bekreft(alt)}
                     disabled={laster === 'bekreft'}
@@ -331,15 +460,42 @@ export default function ForslagKort({
                   >
                     {laster === 'bekreft' ? 'Bekrefter...' : '✓ Bekreft denne datoen'}
                   </button>
+                  <button
+                    onClick={() => fjernDato(alt.id, alt.dato)}
+                    disabled={laster === alt.id}
+                    className="text-xs font-sans uppercase tracking-wider text-ink-700/60 hover:text-wine-700 transition disabled:opacity-50"
+                  >
+                    Fjern denne datoen
+                  </button>
                 </div>
               )}
             </div>
           );
         })}
+
+        {/* Legg til ny dato (admin) */}
+        {erAdmin && forslag.status === 'apen' && (
+          <div className="flex gap-2 pt-2">
+            <input
+              type="date"
+              value={nyDato}
+              onChange={(e) => setNyDato(e.target.value)}
+              className="input-field flex-1"
+              placeholder="Legg til ny dato"
+            />
+            <button
+              onClick={leggTilDato}
+              disabled={!nyDato || laster === 'ny-dato'}
+              className="btn-secondary text-xs disabled:opacity-50"
+            >
+              {laster === 'ny-dato' ? 'Legger til...' : '+ Legg til'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Admin-handlinger */}
-      {erAdmin && forslag.status === 'apen' && (
+      {erAdmin && forslag.status === 'apen' && !redigerer && (
         <div className="pt-4 border-t border-wine-900/10 flex gap-3 flex-wrap">
           <button
             onClick={avlys}
