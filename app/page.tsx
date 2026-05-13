@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
+import ForsideDatoForslag from '@/components/ForsideDatoForslag';
 
 export default async function Forside() {
   const supabase = await createClient();
@@ -25,6 +26,44 @@ export default async function Forside() {
     );
   }
 
+  // Hent åpne dato-forslag
+  const { data: forslagRader } = await supabase
+    .from('dato_forslag_oversikt')
+    .select('*')
+    .eq('status', 'apen');
+
+  const { data: alleSvar } = await supabase
+    .from('dato_svar')
+    .select('alternativ_id, medlem_id, svar');
+
+  const forslagMap: Record<string, any> = {};
+  (forslagRader || []).forEach((rad: any) => {
+    if (!forslagMap[rad.forslag_id]) {
+      forslagMap[rad.forslag_id] = {
+        id: rad.forslag_id,
+        tittel: rad.tittel,
+        beskrivelse: rad.beskrivelse,
+        ansvarlig_navn: rad.ansvarlig_navn,
+        alternativer: [],
+      };
+    }
+    if (rad.alternativ_id) {
+      const mineSvar = (alleSvar || []).find(
+        (s: any) => s.alternativ_id === rad.alternativ_id && s.medlem_id === user.id
+      );
+      forslagMap[rad.forslag_id].alternativer.push({
+        id: rad.alternativ_id,
+        dato: rad.dato,
+        antall_kan: rad.antall_kan,
+        antall_kan_ikke: rad.antall_kan_ikke,
+        antall_kanskje: rad.antall_kanskje,
+        mitt_svar: mineSvar?.svar || null,
+      });
+    }
+  });
+
+  const apneForslag = Object.values(forslagMap);
+
   // Finn neste fremtidige eller siste passerte klubbkveld
   const idag = new Date().toISOString().split('T')[0];
   const { data: neste } = await supabase
@@ -46,7 +85,6 @@ export default async function Forside() {
   const visKveld = neste || siste;
   const erFremtidig = !!neste;
 
-  // Hent oppmøtte og viner for visKveld
   let oppmotte: any[] = [];
   let smakinger: any[] = [];
 
@@ -74,7 +112,7 @@ export default async function Forside() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-12">
       {/* Hero */}
-      <div className="text-center mb-16 fade-up">
+      <div className="text-center mb-12 fade-up">
         <p className="text-sm uppercase tracking-[0.3em] text-wine-700/70 font-sans mb-4">
           Velkommen, {medlem.navn}
         </p>
@@ -83,6 +121,11 @@ export default async function Forside() {
         </h1>
         <div className="gold-line w-32 mx-auto" />
       </div>
+
+      {/* Dato-forslag - vises øverst hvis det finnes åpne forslag */}
+      {apneForslag.length > 0 && (
+        <ForsideDatoForslag forslag={apneForslag as any} brukerId={user.id} />
+      )}
 
       {visKveld ? (
         <section className="kort overflow-hidden fade-up" style={{ animationDelay: '0.1s' }}>
