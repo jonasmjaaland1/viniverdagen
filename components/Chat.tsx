@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import { createClient } from '@/lib/supabase-browser';
-import Melding from './Melding';
-import Avatar from './Avatar';
+import { useEffect, useState, useRef, useCallback } from "react";
+import { createClient } from "@/lib/supabase-browser";
+import Melding from "./Melding";
+import Avatar from "./Avatar";
 
 interface MeldingType {
   id: string;
@@ -29,6 +29,14 @@ interface SistSettType {
   medlemmer?: { navn: string };
 }
 
+interface ReaksjonType {
+  id: string;
+  melding_id: string;
+  medlem_id: string;
+  emoji: string;
+  medlemmer?: { navn: string };
+}
+
 export default function Chat({
   brukerId,
   brukernavn,
@@ -42,19 +50,23 @@ export default function Chat({
 }) {
   const supabase = createClient();
   const [meldinger, setMeldinger] = useState<MeldingType[]>(startMeldinger);
-  const [tekst, setTekst] = useState('');
+  const [reaksjoner, setReaksjoner] = useState<ReaksjonType[]>([]);
+  const [tekst, setTekst] = useState("");
   const [svarerTil, setSvarerTil] = useState<MeldingType | null>(null);
   const [sender, setSender] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
   const [valgtBilde, setValgtBilde] = useState<File | null>(null);
-  const [bildeForhandsvisning, setBildeForhandsvisning] = useState<string | null>(null);
+  const [bildeForhandsvisning, setBildeForhandsvisning] = useState<
+    string | null
+  >(null);
   const [aktivitet, setAktivitet] = useState<SistSettType[]>([]);
   const meldingsListeRef = useRef<HTMLDivElement>(null);
   const filInputRef = useRef<HTMLInputElement>(null);
 
   const scrollTilBunnen = useCallback(() => {
     if (meldingsListeRef.current) {
-      meldingsListeRef.current.scrollTop = meldingsListeRef.current.scrollHeight;
+      meldingsListeRef.current.scrollTop =
+        meldingsListeRef.current.scrollHeight;
     }
   }, []);
 
@@ -62,61 +74,69 @@ export default function Chat({
     scrollTilBunnen();
   }, [meldinger.length, scrollTilBunnen]);
 
-  // Oppdater "sist sett" for denne brukeren
   const oppdaterSistSett = useCallback(async () => {
-    await supabase
-      .from('chat_aktivitet')
-      .upsert({
-        medlem_id: brukerId,
-        sist_sett: new Date().toISOString(),
-      });
+    await supabase.from("chat_aktivitet").upsert({
+      medlem_id: brukerId,
+      sist_sett: new Date().toISOString(),
+    });
   }, [supabase, brukerId]);
 
-  // Oppdater sist sett når man kommer inn, og hvert 30. sek
   useEffect(() => {
     oppdaterSistSett();
     const interval = setInterval(oppdaterSistSett, 30000);
     return () => clearInterval(interval);
   }, [oppdaterSistSett]);
 
-  // Også når ny melding kommer eller bruker scroller
   useEffect(() => {
     if (meldinger.length > 0) {
       oppdaterSistSett();
     }
   }, [meldinger.length, oppdaterSistSett]);
 
-  // Hent aktivitet ved oppstart
   useEffect(() => {
     async function hentAktivitet() {
       const { data } = await supabase
-        .from('chat_aktivitet')
-        .select('medlem_id, sist_sett, medlemmer(navn)')
-        .neq('medlem_id', brukerId);
+        .from("chat_aktivitet")
+        .select("medlem_id, sist_sett, medlemmer(navn)")
+        .neq("medlem_id", brukerId);
       if (data) setAktivitet(data as any);
     }
     hentAktivitet();
   }, [supabase, brukerId]);
 
+  // Hent reaksjoner ved oppstart
+  useEffect(() => {
+    async function hentReaksjoner() {
+      const { data } = await supabase
+        .from("melding_reaksjoner")
+        .select("id, melding_id, medlem_id, emoji, medlemmer(navn)");
+      if (data) setReaksjoner(data as any);
+    }
+    hentReaksjoner();
+  }, [supabase]);
+
   // Realtime: meldinger
   useEffect(() => {
+    const kanalId = "meldinger-" + Math.random().toString(36).slice(2);
     const channel = supabase
-      .channel('meldinger-channel')
+      .channel(kanalId)
       .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'meldinger' },
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "meldinger" },
         async (payload) => {
           const { data } = await supabase
-            .from('meldinger')
-            .select(`
+            .from("meldinger")
+            .select(
+              `
               *,
               medlemmer (id, navn),
               svar_til:svar_til_id (
                 id, tekst, bilde_url,
                 medlemmer (navn)
               )
-            `)
-            .eq('id', payload.new.id)
+            `,
+            )
+            .eq("id", payload.new.id)
             .single();
 
           if (data) {
@@ -125,38 +145,40 @@ export default function Chat({
               return [...prev, data as MeldingType];
             });
           }
-        }
+        },
       )
       .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'meldinger' },
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "meldinger" },
         async (payload) => {
           const { data } = await supabase
-            .from('meldinger')
-            .select(`
+            .from("meldinger")
+            .select(
+              `
               *,
               medlemmer (id, navn),
               svar_til:svar_til_id (
                 id, tekst, bilde_url,
                 medlemmer (navn)
               )
-            `)
-            .eq('id', payload.new.id)
+            `,
+            )
+            .eq("id", payload.new.id)
             .single();
 
           if (data) {
             setMeldinger((prev) =>
-              prev.map((m) => (m.id === data.id ? (data as MeldingType) : m))
+              prev.map((m) => (m.id === data.id ? (data as MeldingType) : m)),
             );
           }
-        }
+        },
       )
       .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'meldinger' },
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "meldinger" },
         (payload) => {
           setMeldinger((prev) => prev.filter((m) => m.id !== payload.old.id));
-        }
+        },
       )
       .subscribe();
 
@@ -165,21 +187,57 @@ export default function Chat({
     };
   }, [supabase]);
 
-  // Realtime: chat_aktivitet
+  // Realtime: reaksjoner
   useEffect(() => {
+    const kanalId = "reaksjoner-" + Math.random().toString(36).slice(2);
     const channel = supabase
-      .channel('aktivitet-channel')
+      .channel(kanalId)
       .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'chat_aktivitet' },
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "melding_reaksjoner" },
+        async (payload) => {
+          const { data } = await supabase
+            .from("melding_reaksjoner")
+            .select("id, melding_id, medlem_id, emoji, medlemmer(navn)")
+            .eq("id", payload.new.id)
+            .single();
+          if (data) {
+            setReaksjoner((prev) => {
+              if (prev.find((r) => r.id === data.id)) return prev;
+              return [...prev, data as any];
+            });
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "melding_reaksjoner" },
+        (payload) => {
+          setReaksjoner((prev) => prev.filter((r) => r.id !== payload.old.id));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    const kanalId = "aktivitet-" + Math.random().toString(36).slice(2);
+    const channel = supabase
+      .channel(kanalId)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_aktivitet" },
         async (payload) => {
           const nyMedlemId = (payload.new as any)?.medlem_id;
           if (!nyMedlemId || nyMedlemId === brukerId) return;
 
           const { data } = await supabase
-            .from('chat_aktivitet')
-            .select('medlem_id, sist_sett, medlemmer(navn)')
-            .eq('medlem_id', nyMedlemId)
+            .from("chat_aktivitet")
+            .select("medlem_id, sist_sett, medlemmer(navn)")
+            .eq("medlem_id", nyMedlemId)
             .single();
 
           if (data) {
@@ -188,7 +246,7 @@ export default function Chat({
               return [...filtrert, data as any];
             });
           }
-        }
+        },
       )
       .subscribe();
 
@@ -201,11 +259,11 @@ export default function Chat({
     const fil = e.target.files?.[0];
     if (!fil) return;
     if (fil.size > 5 * 1024 * 1024) {
-      setFeil('Bilde må være under 5 MB.');
+      setFeil("Bilde må være under 5 MB.");
       return;
     }
-    if (!fil.type.startsWith('image/')) {
-      setFeil('Bare bildefiler er tillatt.');
+    if (!fil.type.startsWith("image/")) {
+      setFeil("Bare bildefiler er tillatt.");
       return;
     }
     setValgtBilde(fil);
@@ -217,7 +275,7 @@ export default function Chat({
     setValgtBilde(null);
     if (bildeForhandsvisning) URL.revokeObjectURL(bildeForhandsvisning);
     setBildeForhandsvisning(null);
-    if (filInputRef.current) filInputRef.current.value = '';
+    if (filInputRef.current) filInputRef.current.value = "";
   }
 
   async function sendMelding() {
@@ -228,26 +286,26 @@ export default function Chat({
     let bilde_url: string | null = null;
 
     if (valgtBilde) {
-      const filendelse = valgtBilde.name.split('.').pop();
+      const filendelse = valgtBilde.name.split(".").pop();
       const filnavn = `${brukerId}/${Date.now()}.${filendelse}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('chat-bilder')
+        .from("chat-bilder")
         .upload(filnavn, valgtBilde);
 
       if (uploadError) {
-        setFeil('Kunne ikke laste opp bilde: ' + uploadError.message);
+        setFeil("Kunne ikke laste opp bilde: " + uploadError.message);
         setSender(false);
         return;
       }
 
       const { data: urlData } = supabase.storage
-        .from('chat-bilder')
+        .from("chat-bilder")
         .getPublicUrl(filnavn);
       bilde_url = urlData.publicUrl;
     }
 
-    const { error } = await supabase.from('meldinger').insert({
+    const { error } = await supabase.from("meldinger").insert({
       medlem_id: brukerId,
       tekst: tekst.trim() || null,
       bilde_url,
@@ -260,7 +318,7 @@ export default function Chat({
       return;
     }
 
-    setTekst('');
+    setTekst("");
     setSvarerTil(null);
     fjernBilde();
     setSender(false);
@@ -268,13 +326,12 @@ export default function Chat({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       sendMelding();
     }
   }
 
-  // Beregn hvem som har sett siste melding fra meg
   const minSisteMelding = [...meldinger]
     .reverse()
     .find((m) => m.medlem_id === brukerId);
@@ -306,6 +363,10 @@ export default function Chat({
                   new Date(forrige.opprettet_at).getTime() >
                   5 * 60 * 1000;
 
+              const minRekasjoner = reaksjoner.filter(
+                (r) => r.melding_id === m.id,
+              );
+
               return (
                 <Melding
                   key={m.id}
@@ -314,21 +375,24 @@ export default function Chat({
                   visAvsender={visAvsender}
                   paSvar={() => setSvarerTil(m)}
                   erAdmin={erAdmin}
+                  brukerId={brukerId}
+                  reaksjoner={minRekasjoner}
                 />
               );
             })}
 
-            {/* "Lest av"-indikator under siste melding fra meg */}
             {sett_av.length > 0 && minSisteMelding && (
               <div className="flex justify-end items-center gap-2 mt-1 mr-1 pb-1">
-                <span className="text-[10px] text-ink-700/50 font-sans">Sett av</span>
+                <span className="text-[10px] text-ink-700/50 font-sans">
+                  Sett av
+                </span>
                 <div className="flex -space-x-1">
                   {sett_av.slice(0, 5).map((a) => (
                     <Avatar
                       key={a.medlem_id}
                       navn={a.medlemmer?.navn}
                       storrelse="liten"
-                      tittel={`${a.medlemmer?.navn} (${new Date(a.sist_sett).toLocaleString('nb-NO')})`}
+                      tittel={`${a.medlemmer?.navn} (${new Date(a.sist_sett).toLocaleString("nb-NO")})`}
                     />
                   ))}
                   {sett_av.length > 5 && (
@@ -351,7 +415,7 @@ export default function Chat({
                 Svarer på {svarerTil.medlemmer?.navn}
               </p>
               <p className="text-ink-700/70 truncate">
-                {svarerTil.tekst || (svarerTil.bilde_url ? '📷 Bilde' : '')}
+                {svarerTil.tekst || (svarerTil.bilde_url ? "📷 Bilde" : "")}
               </p>
             </div>
             <button
@@ -379,9 +443,7 @@ export default function Chat({
           </div>
         )}
 
-        {feil && (
-          <p className="text-xs text-wine-700 mb-2">{feil}</p>
-        )}
+        {feil && <p className="text-xs text-wine-700 mb-2">{feil}</p>}
 
         <div className="flex gap-2 items-end">
           <button
@@ -413,7 +475,7 @@ export default function Chat({
             disabled={sender || (!tekst.trim() && !valgtBilde)}
             className="btn-primary disabled:opacity-50"
           >
-            {sender ? '…' : 'Send'}
+            {sender ? "…" : "Send"}
           </button>
         </div>
       </div>

@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { createClient } from '@/lib/supabase-browser';
-import Avatar from './Avatar';
+import { useState } from "react";
+import { createClient } from "@/lib/supabase-browser";
+import Avatar from "./Avatar";
+import Reaksjoner from "./Reaksjoner";
 
 interface MeldingType {
   id: string;
@@ -22,22 +23,34 @@ interface MeldingType {
   } | null;
 }
 
+interface ReaksjonType {
+  id: string;
+  melding_id: string;
+  medlem_id: string;
+  emoji: string;
+  medlemmer?: { navn: string };
+}
+
 export default function Melding({
   melding,
   erMin,
   visAvsender,
   paSvar,
   erAdmin = false,
+  brukerId,
+  reaksjoner = [],
 }: {
   melding: MeldingType;
   erMin: boolean;
   visAvsender: boolean;
   paSvar: () => void;
   erAdmin?: boolean;
+  brukerId: string;
+  reaksjoner?: ReaksjonType[];
 }) {
   const supabase = createClient();
   const [redigerer, setRedigerer] = useState(false);
-  const [redigertTekst, setRedigertTekst] = useState(melding.tekst || '');
+  const [redigertTekst, setRedigertTekst] = useState(melding.tekst || "");
   const [meny, setMeny] = useState(false);
 
   const kanSlette = erMin || erAdmin;
@@ -48,16 +61,13 @@ export default function Melding({
       setRedigerer(false);
       return;
     }
-    await supabase
-      .from('meldinger')
-      .update({ tekst: ny })
-      .eq('id', melding.id);
+    await supabase.from("meldinger").update({ tekst: ny }).eq("id", melding.id);
     setRedigerer(false);
   }
 
   async function slett() {
-    if (!confirm('Slett meldingen?')) return;
-    await supabase.from('meldinger').delete().eq('id', melding.id);
+    if (!confirm("Slett meldingen?")) return;
+    await supabase.from("meldinger").delete().eq("id", melding.id);
     setMeny(false);
   }
 
@@ -69,29 +79,33 @@ export default function Melding({
       d.getMonth() === naa.getMonth() &&
       d.getFullYear() === naa.getFullYear();
     if (erIDag) {
-      return d.toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleTimeString("nb-NO", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
     }
-    return d.toLocaleDateString('nb-NO', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
+    return d.toLocaleDateString("nb-NO", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   }
 
   return (
-    <div className={`flex items-end gap-2 ${erMin ? 'justify-end' : 'justify-start'} group`}>
-      {/* Avatar venstre side (for andres meldinger) */}
+    <div
+      className={`flex items-end gap-2 ${erMin ? "justify-end" : "justify-start"} group`}
+    >
       {!erMin && (
-        <div className={visAvsender ? 'opacity-100' : 'opacity-0'}>
+        <div className={visAvsender ? "opacity-100" : "opacity-0"}>
           <Avatar navn={melding.medlemmer?.navn} storrelse="medium" />
         </div>
       )}
 
-      <div className={`max-w-[78%] ${erMin ? 'order-2' : 'order-1'}`}>
+      <div className={`max-w-[78%] ${erMin ? "order-2" : "order-1"}`}>
         {visAvsender && !erMin && (
           <p className="text-xs font-display text-wine-700 mb-1 ml-1">
-            {melding.medlemmer?.navn || 'Ukjent'}
+            {melding.medlemmer?.navn || "Ukjent"}
           </p>
         )}
 
@@ -99,31 +113,38 @@ export default function Melding({
           <div
             className={`rounded-2xl px-4 py-2 ${
               erMin
-                ? 'bg-wine-700 text-cream-50 rounded-br-md'
-                : 'bg-cream-100 text-ink-700 rounded-bl-md'
+                ? "bg-wine-700 text-cream-50 rounded-br-md"
+                : "bg-cream-100 text-ink-700 rounded-bl-md"
             }`}
           >
-            {/* Svar-referanse */}
             {melding.svar_til && (
               <div
                 className={`mb-2 px-3 py-1.5 rounded text-xs border-l-2 ${
                   erMin
-                    ? 'bg-wine-800/40 border-cream-50/50'
-                    : 'bg-cream-50 border-wine-700/50'
+                    ? "bg-wine-800/40 border-cream-50/50"
+                    : "bg-cream-50 border-wine-700/50"
                 }`}
               >
-                <p className={`font-display ${erMin ? 'text-cream-50/90' : 'text-wine-700'}`}>
-                  {melding.svar_til.medlemmer?.navn || 'Ukjent'}
+                <p
+                  className={`font-display ${erMin ? "text-cream-50/90" : "text-wine-700"}`}
+                >
+                  {melding.svar_til.medlemmer?.navn || "Ukjent"}
                 </p>
-                <p className={`truncate ${erMin ? 'text-cream-50/70' : 'text-ink-700/70'}`}>
-                  {melding.svar_til.tekst || (melding.svar_til.bilde_url ? '📷 Bilde' : '')}
+                <p
+                  className={`truncate ${erMin ? "text-cream-50/70" : "text-ink-700/70"}`}
+                >
+                  {melding.svar_til.tekst ||
+                    (melding.svar_til.bilde_url ? "📷 Bilde" : "")}
                 </p>
               </div>
             )}
 
-            {/* Bilde */}
             {melding.bilde_url && (
-              <a href={melding.bilde_url} target="_blank" rel="noopener noreferrer">
+              <a
+                href={melding.bilde_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
                 <img
                   src={melding.bilde_url}
                   alt=""
@@ -132,7 +153,6 @@ export default function Melding({
               </a>
             )}
 
-            {/* Tekst (eller redigering) */}
             {redigerer ? (
               <div className="space-y-2">
                 <textarea
@@ -152,9 +172,9 @@ export default function Melding({
                   <button
                     onClick={() => {
                       setRedigerer(false);
-                      setRedigertTekst(melding.tekst || '');
+                      setRedigertTekst(melding.tekst || "");
                     }}
-                    className={erMin ? 'text-cream-50/80' : 'text-ink-700/70'}
+                    className={erMin ? "text-cream-50/80" : "text-ink-700/70"}
                   >
                     Avbryt
                   </button>
@@ -162,25 +182,25 @@ export default function Melding({
               </div>
             ) : (
               melding.tekst && (
-                <p className="whitespace-pre-wrap break-words">{melding.tekst}</p>
+                <p className="whitespace-pre-wrap break-words">
+                  {melding.tekst}
+                </p>
               )
             )}
 
-            {/* Tidsstempel */}
             <div
               className={`text-[10px] mt-1 ${
-                erMin ? 'text-cream-50/60' : 'text-ink-700/50'
+                erMin ? "text-cream-50/60" : "text-ink-700/50"
               }`}
             >
               {formatTid(melding.opprettet_at)}
-              {melding.redigert && ' · redigert'}
+              {melding.redigert && " · redigert"}
             </div>
           </div>
 
-          {/* Handlingsmeny */}
           {!redigerer && (
             <div
-              className={`absolute top-1 ${erMin ? 'left-0 -translate-x-full' : 'right-0 translate-x-full'} opacity-0 group-hover:opacity-100 transition-opacity`}
+              className={`absolute top-1 ${erMin ? "left-0 -translate-x-full" : "right-0 translate-x-full"} opacity-0 group-hover:opacity-100 transition-opacity`}
             >
               <button
                 onClick={() => setMeny(!meny)}
@@ -190,17 +210,23 @@ export default function Melding({
               </button>
               {meny && (
                 <div
-                  className={`absolute top-8 ${erMin ? 'left-0' : 'right-0'} bg-cream-50 border border-wine-900/10 rounded shadow-lg z-50 min-w-[120px]`}
+                  className={`absolute top-8 ${erMin ? "left-0" : "right-0"} bg-cream-50 border border-wine-900/10 rounded shadow-lg z-50 min-w-[120px]`}
                 >
                   <button
-                    onClick={() => { paSvar(); setMeny(false); }}
+                    onClick={() => {
+                      paSvar();
+                      setMeny(false);
+                    }}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-cream-100 text-ink-700"
                   >
                     ↩ Svar
                   </button>
                   {erMin && melding.tekst && (
                     <button
-                      onClick={() => { setRedigerer(true); setMeny(false); }}
+                      onClick={() => {
+                        setRedigerer(true);
+                        setMeny(false);
+                      }}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-cream-100 text-ink-700"
                     >
                       ✏ Rediger
@@ -211,7 +237,7 @@ export default function Melding({
                       onClick={slett}
                       className="w-full text-left px-3 py-2 text-sm hover:bg-cream-100 text-wine-700"
                     >
-                      🗑 Slett{!erMin && erAdmin ? ' (admin)' : ''}
+                      🗑 Slett{!erMin && erAdmin ? " (admin)" : ""}
                     </button>
                   )}
                 </div>
@@ -219,6 +245,17 @@ export default function Melding({
             </div>
           )}
         </div>
+
+        {/* Reaksjoner */}
+        {!redigerer && (
+          <div className={erMin ? "flex justify-end" : ""}>
+            <Reaksjoner
+              meldingId={melding.id}
+              brukerId={brukerId}
+              reaksjoner={reaksjoner}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
