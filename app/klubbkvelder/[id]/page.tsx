@@ -180,7 +180,11 @@ export default async function Klubbkveld({
       {/* Admin-seksjon: Inviter gjester */}
       {meg?.er_admin && (
         <div className="mb-12">
-          <InviterGjest klubbkveldId={id} gjester={gjester} />
+          <InviterGjest
+            klubbkveldId={id}
+            gjester={gjester}
+            kveldTittel={kveld.tittel}
+          />
         </div>
       )}
 
