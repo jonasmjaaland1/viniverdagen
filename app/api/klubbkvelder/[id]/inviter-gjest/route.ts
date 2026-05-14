@@ -71,6 +71,7 @@ export async function POST(
         const { error: e } = await service.from("medlemmer").insert({
           id: gjestId,
           navn: navn.trim(),
+          epost: epostRen,
           godkjent: true,
           er_gjest: true,
           er_klubbmedlem: false,
@@ -106,6 +107,7 @@ export async function POST(
       const { error: medlemErr } = await service.from("medlemmer").insert({
         id: gjestId,
         navn: navn.trim(),
+        epost: epostRen,
         godkjent: true,
         er_gjest: true,
         er_klubbmedlem: false,
@@ -139,7 +141,7 @@ export async function POST(
     const siteUrl =
       process.env.NEXT_PUBLIC_SITE_URL || "https://www.viniverdagen.com";
 
-    // Generer magic link (returnerer lenken, sender ikke automatisk e-post)
+    // Generer magic link (returnerer lenken)
     const { data: linkData, error: linkErr } =
       await service.auth.admin.generateLink({
         type: "magiclink",
@@ -160,12 +162,11 @@ export async function POST(
 
     const lenke = linkData.properties?.action_link || null;
 
-    // Send e-post hvis ønsket (default ja for bakoverkompatibilitet)
+    // Send e-post hvis ønsket
     let epostSendt = false;
     let epostFeil: string | null = null;
 
     if (sendEpost !== false) {
-      // Bruker signInWithOtp for å sende via SMTP-en vi har satt opp i Supabase
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: epostRen,
         options: {
