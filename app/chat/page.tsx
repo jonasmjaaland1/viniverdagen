@@ -21,10 +21,10 @@ export default async function ChatSide() {
     .from('meldinger')
     .select(`
       *,
-      medlemmer (id, navn),
+      medlemmer (id, navn, bilde_url),
       svar_til:svar_til_id (
         id, tekst, bilde_url,
-        medlemmer (navn)
+        medlemmer (navn, bilde_url)
       )
     `)
     .order('opprettet_at', { ascending: false })

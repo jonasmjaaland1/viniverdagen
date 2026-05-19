@@ -14,12 +14,12 @@ interface MeldingType {
   redigert: boolean;
   opprettet_at: string;
   oppdatert_at: string;
-  medlemmer?: { id: string; navn: string };
+  medlemmer?: { id: string; navn: string; bilde_url?: string | null };
   svar_til?: {
     id: string;
     tekst: string | null;
     bilde_url: string | null;
-    medlemmer?: { navn: string };
+    medlemmer?: { navn: string; bilde_url?: string | null };
   } | null;
 }
 
@@ -98,7 +98,11 @@ export default function Melding({
     >
       {!erMin && (
         <div className={visAvsender ? "opacity-100" : "opacity-0"}>
-          <Avatar navn={melding.medlemmer?.navn} storrelse="medium" />
+          <Avatar
+            navn={melding.medlemmer?.navn}
+            bildeUrl={melding.medlemmer?.bilde_url}
+            storrelse="medium"
+          />
         </div>
       )}
 
@@ -246,7 +250,6 @@ export default function Melding({
           )}
         </div>
 
-        {/* Reaksjoner */}
         {!redigerer && (
           <div className={erMin ? "flex justify-end" : ""}>
             <Reaksjoner

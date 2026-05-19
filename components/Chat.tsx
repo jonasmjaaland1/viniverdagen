@@ -14,19 +14,19 @@ interface MeldingType {
   redigert: boolean;
   opprettet_at: string;
   oppdatert_at: string;
-  medlemmer?: { id: string; navn: string };
+  medlemmer?: { id: string; navn: string; bilde_url?: string | null };
   svar_til?: {
     id: string;
     tekst: string | null;
     bilde_url: string | null;
-    medlemmer?: { navn: string };
+    medlemmer?: { navn: string; bilde_url?: string | null };
   } | null;
 }
 
 interface SistSettType {
   medlem_id: string;
   sist_sett: string;
-  medlemmer?: { navn: string };
+  medlemmer?: { navn: string; bilde_url?: string | null };
 }
 
 interface ReaksjonType {
@@ -97,14 +97,13 @@ export default function Chat({
     async function hentAktivitet() {
       const { data } = await supabase
         .from("chat_aktivitet")
-        .select("medlem_id, sist_sett, medlemmer(navn)")
+        .select("medlem_id, sist_sett, medlemmer(navn, bilde_url)")
         .neq("medlem_id", brukerId);
       if (data) setAktivitet(data as any);
     }
     hentAktivitet();
   }, [supabase, brukerId]);
 
-  // Hent reaksjoner ved oppstart
   useEffect(() => {
     async function hentReaksjoner() {
       const { data } = await supabase
@@ -115,7 +114,6 @@ export default function Chat({
     hentReaksjoner();
   }, [supabase]);
 
-  // Realtime: meldinger
   useEffect(() => {
     const kanalId = "meldinger-" + Math.random().toString(36).slice(2);
     const channel = supabase
@@ -129,10 +127,10 @@ export default function Chat({
             .select(
               `
               *,
-              medlemmer (id, navn),
+              medlemmer (id, navn, bilde_url),
               svar_til:svar_til_id (
                 id, tekst, bilde_url,
-                medlemmer (navn)
+                medlemmer (navn, bilde_url)
               )
             `,
             )
@@ -156,10 +154,10 @@ export default function Chat({
             .select(
               `
               *,
-              medlemmer (id, navn),
+              medlemmer (id, navn, bilde_url),
               svar_til:svar_til_id (
                 id, tekst, bilde_url,
-                medlemmer (navn)
+                medlemmer (navn, bilde_url)
               )
             `,
             )
@@ -187,7 +185,6 @@ export default function Chat({
     };
   }, [supabase]);
 
-  // Realtime: reaksjoner
   useEffect(() => {
     const kanalId = "reaksjoner-" + Math.random().toString(36).slice(2);
     const channel = supabase
@@ -236,7 +233,7 @@ export default function Chat({
 
           const { data } = await supabase
             .from("chat_aktivitet")
-            .select("medlem_id, sist_sett, medlemmer(navn)")
+            .select("medlem_id, sist_sett, medlemmer(navn, bilde_url)")
             .eq("medlem_id", nyMedlemId)
             .single();
 
@@ -391,6 +388,7 @@ export default function Chat({
                     <Avatar
                       key={a.medlem_id}
                       navn={a.medlemmer?.navn}
+                      bildeUrl={a.medlemmer?.bilde_url}
                       storrelse="liten"
                       tittel={`${a.medlemmer?.navn} (${new Date(a.sist_sett).toLocaleString("nb-NO")})`}
                     />
