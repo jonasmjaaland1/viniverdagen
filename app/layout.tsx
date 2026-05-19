@@ -48,7 +48,7 @@ export default async function RootLayout({
   if (user) {
     const { data } = await supabase
       .from("medlemmer")
-      .select("id, navn, godkjent, er_admin")
+      .select("id, navn, godkjent, er_admin, bilde_url")
       .eq("id", user.id)
       .single();
     medlem = data;

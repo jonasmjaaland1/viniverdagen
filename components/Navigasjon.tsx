@@ -4,12 +4,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import UlestTeller from "./UlestTeller";
+import Avatar from "./Avatar";
 
 interface Medlem {
   id: string;
   navn: string;
   godkjent: boolean;
   er_admin: boolean;
+  bilde_url?: string | null;
 }
 
 export default function Navigasjon({ medlem }: { medlem: Medlem }) {
@@ -50,6 +52,7 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
     { href: "/sporr-claude", label: "Spør KI", ikon: "🤖" },
     { href: "/mine-viner", label: "Mine viner", ikon: "📦" },
     { href: "/statistikk", label: "Statistikk", ikon: "📊" },
+    { href: "/profil", label: "Min profil", ikon: "👤" },
     { href: "/innstillinger", label: "Innstillinger", ikon: "🔔" },
   ];
 
@@ -148,19 +151,29 @@ export default function Navigasjon({ medlem }: { medlem: Medlem }) {
           </button>
         </div>
 
-        <div className="px-5 py-4 border-b border-wine-900/10 bg-cream-100/50">
-          <p className="text-xs uppercase tracking-wider font-sans text-ink-700/50">
-            Logget inn som
-          </p>
-          <p className="font-display text-lg text-wine-900 mt-0.5">
-            {medlem.navn}
-          </p>
-          {medlem.er_admin && (
-            <span className="inline-block mt-1 text-xs uppercase tracking-wider font-sans bg-wine-700 text-cream-50 px-2 py-0.5 rounded">
-              Admin
-            </span>
-          )}
-        </div>
+        <Link
+          href="/profil"
+          className="px-5 py-4 border-b border-wine-900/10 bg-cream-100/50 flex items-center gap-3 hover:bg-cream-100 transition"
+        >
+          <Avatar
+            navn={medlem.navn}
+            bildeUrl={medlem.bilde_url}
+            storrelse="stor"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs uppercase tracking-wider font-sans text-ink-700/50">
+              Logget inn som
+            </p>
+            <p className="font-display text-lg text-wine-900 mt-0.5 truncate">
+              {medlem.navn}
+            </p>
+            {medlem.er_admin && (
+              <span className="inline-block mt-1 text-xs uppercase tracking-wider font-sans bg-wine-700 text-cream-50 px-2 py-0.5 rounded">
+                Admin
+              </span>
+            )}
+          </div>
+        </Link>
 
         <nav className="flex-1 overflow-y-auto py-2">
           {menyLenker.map((l) => (
