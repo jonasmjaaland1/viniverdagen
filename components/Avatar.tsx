@@ -1,6 +1,4 @@
-// Avatar-komponent som viser initialer i en farget sirkel
-// Fargen er deterministisk basert på navnet - samme navn = samme farge
-
+// Avatar-komponent som viser bilde hvis det finnes, ellers initialer i farget sirkel
 const FARGER = [
   'bg-wine-700',
   'bg-amber-700',
@@ -36,11 +34,12 @@ export function initialerFor(navn: string | undefined | null): string {
 
 interface AvatarProps {
   navn: string | undefined | null;
-  storrelse?: 'liten' | 'medium' | 'stor';
+  bildeUrl?: string | null;
+  storrelse?: 'liten' | 'medium' | 'stor' | 'xl';
   tittel?: string;
 }
 
-export default function Avatar({ navn, storrelse = 'medium', tittel }: AvatarProps) {
+export default function Avatar({ navn, bildeUrl, storrelse = 'medium', tittel }: AvatarProps) {
   const initialer = initialerFor(navn);
   const farge = fargeForNavn(navn);
 
@@ -48,8 +47,26 @@ export default function Avatar({ navn, storrelse = 'medium', tittel }: AvatarPro
     liten: 'w-6 h-6 text-[10px]',
     medium: 'w-9 h-9 text-sm',
     stor: 'w-12 h-12 text-base',
+    xl: 'w-24 h-24 text-2xl',
   };
 
+  // Hvis vi har bilde, vis det
+  if (bildeUrl) {
+    return (
+      <div
+        className={`${storrelsesKlasser[storrelse]} rounded-full overflow-hidden flex-shrink-0 bg-cream-100`}
+        title={tittel || navn || ''}
+      >
+        <img
+          src={bildeUrl}
+          alt={navn || ''}
+          className="w-full h-full object-cover"
+        />
+      </div>
+    );
+  }
+
+  // Ellers vis initialer
   return (
     <div
       className={`${farge} ${storrelsesKlasser[storrelse]} rounded-full flex items-center justify-center text-cream-50 font-display font-medium flex-shrink-0`}
